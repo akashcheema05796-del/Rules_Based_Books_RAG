@@ -1,0 +1,6 @@
+[2026-04-24 11:26:42,478][rag_benchmark][INFO] - Stage: parse
+[2026-04-24 11:26:42,479][rag_benchmark][INFO] - Chunking strategies: ['recursive', 'markdown_hierarchical', 'contextual', 'table_aware', 'adaptive']
+[2026-04-24 11:26:42,479][rag_benchmark][INFO] - Retrieval methods: ['dense', 'bm25', 'hybrid_rrf', 'hybrid_rerank', 'metadata_filter', 'small_to_big', 'hyde', 'query_decomposition']
+[2026-04-24 11:26:47,290][src.utils.seeds][INFO] - Seeds set: random=42, numpy=42, torch=42
+[2026-04-24 11:26:47,292][rag_benchmark][INFO] - Parsing corpus to AST...
+[2026-04-24 11:26:47,293][src.corpus.parser][INFO] - Reading corpus from C:\Users\Total\Downloads\Research Paper RAG\data\raw\DnD_Second_edition__all_26_books.md

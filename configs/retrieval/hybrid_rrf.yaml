@@ -1,0 +1,8 @@
+# Hybrid Dense + BM25 with RRF (§6.3)
+# IBM Blended RAG (three-way best); Milvus Pass@5 = 84.7%
+
+method: "hybrid_rrf"
+description: "Dense + BM25 fused via Reciprocal Rank Fusion"
+
+# RRF parameter
+rrf_k: 60  # 2026 default per Prem AI benchmark guide

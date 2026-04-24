@@ -1,0 +1,14 @@
+# Table-Aware Chunking (§5.4)
+# Corpus-specific: 20k table lines, 20% of gold set is tabular
+
+strategy: "table_aware"
+
+# Table handling
+table_context_tokens: 200  # preceding context prepended to each table chunk
+keep_table_atomic: true    # never split a table internally
+
+# Non-table content falls through to recursive
+recursive_fallback:
+  chunk_size_tokens: 512
+  overlap_fraction: 0.15
+  overlap_tokens: 77

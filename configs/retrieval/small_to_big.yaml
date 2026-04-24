@@ -1,0 +1,13 @@
+# Small-to-Big Retrieval (§6.6)
+# Retrieve small chunks, return parent section for context
+
+method: "small_to_big"
+description: "Chunk small (200 tok), retrieve small, return parent section (2000 tok)"
+
+# Small chunk parameters (for retrieval precision)
+small_chunk_tokens: 200
+small_overlap_tokens: 30
+
+# Parent chunk parameters (for context breadth)
+parent_chunk_tokens: 2000
+parent_overlap_tokens: 200

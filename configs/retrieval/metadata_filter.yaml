@@ -1,0 +1,14 @@
+# Metadata Filter + Dense Retrieval (§6.5)
+# Self-querying on is_table, book_title, chapter_path
+
+method: "metadata_filter"
+description: "LLM parses query into filter + semantic query, then dense retrieval within filtered set"
+
+# Filterable metadata fields
+filter_fields:
+  - "is_table"
+  - "book_title"
+  - "chapter_path"
+
+# LLM prompt for query parsing
+query_parse_max_tokens: 200

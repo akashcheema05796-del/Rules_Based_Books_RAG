@@ -1,0 +1,18 @@
+# HyDE — Hypothetical Document Embeddings (§6.7)
+# Mixed evidence; helps on semantic queries, hurts on keyword queries
+
+method: "hyde"
+description: "LLM generates hypothetical answer → embed answer → retrieve"
+
+# HyDE generation parameters
+hyde_max_tokens: 300
+hyde_temperature: 0  # deterministic for reproducibility
+
+# Evaluated primarily on lore/narrative queries
+target_query_types:
+  - "lore"
+  - "narrative"
+
+# Cache hypothetical documents
+cache_enabled: true
+cache_dir: ".cache/hyde"

@@ -1,0 +1,20 @@
+# Contextual Retrieval Chunking (§5.3)
+# Anthropic: 35% failure reduction alone, 49% with BM25, 67% with rerank
+
+strategy: "contextual"
+
+# Base chunking uses recursive as substrate
+base_strategy: "recursive"
+base_chunk_size_tokens: 512
+base_overlap_fraction: 0.15
+
+# Context generation
+context_prompt_path: "configs/prompts/contextual.md"
+context_max_tokens: 200  # max tokens for the context blurb
+
+# Caching: keyed by (book, chapter_path, content_hash)
+cache_enabled: true
+cache_dir: ".cache/contextual"
+
+# Use prompt caching on WHOLE_BOOK for cost efficiency
+use_prompt_caching: true

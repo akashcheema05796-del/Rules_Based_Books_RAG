@@ -1,0 +1,18 @@
+# Adaptive Chunking (§5.5)
+# Clinical RAG PMC12649634: adaptive won 87% accuracy vs 50% baseline
+
+strategy: "adaptive"
+
+# Similarity-based merging
+cosine_threshold: 0.75    # merge adjacent sentences while sim > τ
+max_chunk_tokens: 512     # hard cap on merged chunk size
+
+# Micro-header format: [{book} › {chapter_path}]
+micro_header_format: "[{book} › {chapter_path}]"
+prepend_micro_header: true
+
+# Sentence splitting
+sentence_splitter: "rule_based"  # nltk punkt or rule-based
+
+# Uses the pinned embedding model for sentence-level embeddings
+# (no additional LLM calls — an order of magnitude cheaper than contextual)

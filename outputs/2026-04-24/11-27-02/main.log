@@ -1,0 +1,15 @@
+[2026-04-24 11:27:02,977][rag_benchmark][INFO] - Stage: parse
+[2026-04-24 11:27:02,977][rag_benchmark][INFO] - Chunking strategies: ['recursive', 'markdown_hierarchical', 'contextual', 'table_aware', 'adaptive']
+[2026-04-24 11:27:02,978][rag_benchmark][INFO] - Retrieval methods: ['dense', 'bm25', 'hybrid_rrf', 'hybrid_rerank', 'metadata_filter', 'small_to_big', 'hyde', 'query_decomposition']
+[2026-04-24 11:27:07,271][src.utils.seeds][INFO] - Seeds set: random=42, numpy=42, torch=42
+[2026-04-24 11:27:07,272][rag_benchmark][INFO] - Parsing corpus to AST...
+[2026-04-24 11:27:07,272][src.corpus.parser][INFO] - Reading corpus from C:\Users\Total\Downloads\Research Paper RAG\data\raw\DnD_Second_edition__all_26_books.md
+[2026-04-24 11:27:07,274][src.corpus.parser][INFO] - Corpus: 29 lines, 523 chars
+[2026-04-24 11:27:07,277][src.corpus.parser][INFO] - Parsed 10 top-level AST nodes
+[2026-04-24 11:27:07,277][rag_benchmark][INFO] - Parsed 10 top-level AST nodes
+[2026-04-24 11:27:07,277][rag_benchmark][INFO] - Detecting book boundaries...
+[2026-04-24 11:27:07,296][src.corpus.book_detector][INFO] - Found 2 h2 headers
+[2026-04-24 11:27:07,300][src.corpus.book_detector][INFO] - Detected 2 books (target: 26)
+[2026-04-24 11:27:07,301][src.corpus.book_detector][WARNING] - Missing books: {'Dungeon Master Option: High-Level Campaigns', 'Encyclopedia Magica Volume I', "Player's Option: Spells & Magic", "The Complete Druid's Handbook", 'The Complete Book of Dwarves', "The Complete Wizard's Handbook", "The Complete Bard's Handbook", "The Complete Thief's Handbook", 'Encyclopedia Magica Volume II', 'Arms and Equipment Guide', "The Complete Priest's Handbook", "The Complete Paladin's Handbook", 'The Complete Book of Elves', "Player's Option: Skills & Powers", "The Complete Fighter's Handbook", 'The Complete Book of Humanoids', "The Complete Ranger's Handbook", 'Tome of Magic', "The Complete Ninja's Handbook", 'The Complete Psionics Handbook', 'The Complete Book of Gnomes & Halflings', 'Legends & Lore', 'Monstrous Manual', "Player's Option: Combat & Tactics"}
+[2026-04-24 11:27:07,301][rag_benchmark][INFO] - Detected 2 books
+[2026-04-24 11:27:07,301][rag_benchmark][INFO] - Stage 'parse' completed successfully.

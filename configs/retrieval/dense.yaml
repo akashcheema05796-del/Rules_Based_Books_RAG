@@ -1,0 +1,7 @@
+# Dense-only Retrieval (§6.1)
+# Cosine similarity on text-embedding-3-small. Baseline reference.
+
+method: "dense"
+description: "Cosine similarity via ChromaDB dense index"
+
+# No additional parameters — uses base.yaml embedding config

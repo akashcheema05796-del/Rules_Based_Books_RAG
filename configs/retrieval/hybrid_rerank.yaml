@@ -1,0 +1,14 @@
+# Hybrid + Rerank — Three-Stage Pipeline (§6.4)
+# Pinecone: 48% improvement over single-method; Anthropic: 67% failure reduction
+
+method: "hybrid_rerank"
+description: "BM25 + Dense → RRF → cross-encoder reranker"
+
+# Stage 1: Hybrid retrieval
+rrf_k: 60
+initial_top_n: 50  # retrieve this many before reranking
+
+# Stage 2: Cross-encoder reranking
+reranker_model: "BAAI/bge-reranker-v2-m3"
+reranker_fp16: true
+reranker_batch_size: 32

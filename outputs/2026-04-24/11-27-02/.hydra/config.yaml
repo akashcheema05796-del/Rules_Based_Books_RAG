@@ -1,0 +1,72 @@
+seed: 42
+embedding:
+  model: text-embedding-3-small
+  dimensions: 1536
+  batch_size: 256
+  provider: openai
+vector_store:
+  backend: chromadb
+  distance_metric: cosine
+  hnsw_space: cosine
+  persist_dir: data/vector_store
+sparse_index:
+  backend: rank_bm25
+  algorithm: BM25Okapi
+  k1: 1.5
+  b: 0.75
+  persist_dir: data/bm25_index
+fusion:
+  method: rrf
+  rrf_k: 60
+reranker:
+  model: BAAI/bge-reranker-v2-m3
+  use_fp16: true
+  top_n_input: 50
+  batch_size: 32
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-5-20241022
+  temperature: 0
+  seed: 42
+  max_tokens: 4096
+tokenizer:
+  encoding: cl100k_base
+retrieval:
+  k_values:
+  - 1
+  - 3
+  - 5
+  - 10
+  - 20
+  default_k: 10
+evaluation:
+  n_trials: 3
+  bootstrap_resamples: 10000
+  bootstrap_ci: 0.95
+  span_overlap_threshold: 0.5
+  ragas_judge: claude-sonnet-4-5-20241022
+cost_budget:
+  phase1: 10.0
+  phase2: 50.0
+  phase3: 20.0
+  contextual_chunking: 15.0
+  total: 100.0
+paths:
+  raw_corpus: data/raw/DnD_Second_edition__all_26_books.md
+  interim: data/interim
+  processed: data/processed
+  gold: data/gold
+  vector_store: data/vector_store
+  bm25_index: data/bm25_index
+  results: results
+  figures: results/figures
+  chunk_samples: results/chunk_samples
+  cache: .cache
+  log_file: process.log
+rate_limit:
+  base_wait: 1.0
+  max_wait: 60.0
+  max_retries: 6
+corpus:
+  books_manifest: configs/books_manifest.yaml
+stage: parse

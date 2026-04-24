@@ -1,0 +1,8 @@
+# BM25-only Retrieval (§6.2)
+# Sparse keyword retrieval — critical for proper nouns ("THAC0", "Drow", "Vorpal")
+
+method: "bm25"
+description: "Sparse keyword retrieval via rank_bm25 (Okapi BM25)"
+
+# Parameters inherited from base.yaml sparse_index section
+# k1: 1.5, b: 0.75

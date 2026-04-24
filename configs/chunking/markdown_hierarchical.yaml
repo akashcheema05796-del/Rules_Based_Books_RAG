@@ -1,0 +1,19 @@
+# Markdown Hierarchical Chunking (§5.2)
+# Split on h2/h3/h4 headers; oversized chunks post-split with recursive
+
+strategy: "markdown_hierarchical"
+
+# Primary split headers
+split_headers:
+  - "h2"
+  - "h3"
+  - "h4"
+
+# Post-split threshold: oversized chunks > this are re-split with recursive
+oversized_threshold_tokens: 2000
+
+# Recursive fallback parameters (for oversized post-split)
+recursive_fallback:
+  chunk_size_tokens: 512
+  overlap_fraction: 0.15
+  overlap_tokens: 77

@@ -1,0 +1,21 @@
+# Recursive Character Text Splitting (§5.1)
+# FloTorch 2026: 69% on academic papers; chemistry RAG arXiv:2506.17277
+
+strategy: "recursive"
+
+chunk_size_tokens: 512
+overlap_fraction: 0.15  # 15% → ~77 tokens
+overlap_tokens: 77
+
+# Markdown-aware separator hierarchy (tried in order)
+separators:
+  - "\n## "      # h2
+  - "\n### "     # h3
+  - "\n#### "    # h4
+  - "\n\n"       # paragraph
+  - "\n"         # line
+  - " "          # word
+  - ""           # character
+
+# Use token-based splitting (cl100k_base)
+length_function: "token"

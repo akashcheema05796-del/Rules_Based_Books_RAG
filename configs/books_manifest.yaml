@@ -1,0 +1,31 @@
+# AD&D 2nd Edition — 26 Book Titles
+# Used for book boundary detection via h2 header matching.
+# Titles are canonical; matching is case-insensitive with punctuation stripped.
+
+books:
+  - "Player's Handbook"
+  - "Dungeon Master Guide"
+  - "Monstrous Manual"
+  - "Tome of Magic"
+  - "Player's Option: Combat & Tactics"
+  - "Player's Option: Skills & Powers"
+  - "Player's Option: Spells & Magic"
+  - "Dungeon Master Option: High-Level Campaigns"
+  - "Arms and Equipment Guide"
+  - "The Complete Fighter's Handbook"
+  - "The Complete Thief's Handbook"
+  - "The Complete Wizard's Handbook"
+  - "The Complete Priest's Handbook"
+  - "The Complete Bard's Handbook"
+  - "The Complete Ranger's Handbook"
+  - "The Complete Paladin's Handbook"
+  - "The Complete Druid's Handbook"
+  - "The Complete Ninja's Handbook"
+  - "The Complete Book of Elves"
+  - "The Complete Book of Dwarves"
+  - "The Complete Book of Gnomes & Halflings"
+  - "The Complete Book of Humanoids"
+  - "The Complete Psionics Handbook"
+  - "Encyclopedia Magica Volume I"
+  - "Encyclopedia Magica Volume II"
+  - "Legends & Lore"

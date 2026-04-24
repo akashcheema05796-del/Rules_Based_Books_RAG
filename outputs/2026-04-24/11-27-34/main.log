@@ -1,0 +1,16 @@
+[2026-04-24 11:27:34,118][rag_benchmark][INFO] - Stage: chunk
+[2026-04-24 11:27:34,119][rag_benchmark][INFO] - Chunking strategies: ['recursive']
+[2026-04-24 11:27:34,119][rag_benchmark][INFO] - Retrieval methods: ['dense', 'bm25', 'hybrid_rrf', 'hybrid_rerank', 'metadata_filter', 'small_to_big', 'hyde', 'query_decomposition']
+[2026-04-24 11:27:38,475][src.utils.seeds][INFO] - Seeds set: random=42, numpy=42, torch=42
+[2026-04-24 11:27:38,477][rag_benchmark][INFO] - Loading parsed corpus...
+[2026-04-24 11:27:38,477][src.corpus.parser][INFO] - Reading corpus from C:\Users\Total\Downloads\Research Paper RAG\data\raw\DnD_Second_edition__all_26_books.md
+[2026-04-24 11:27:38,478][src.corpus.parser][INFO] - Corpus: 29 lines, 523 chars
+[2026-04-24 11:27:38,482][src.corpus.parser][INFO] - Parsed 10 top-level AST nodes
+[2026-04-24 11:27:38,487][src.corpus.book_detector][INFO] - Found 2 h2 headers
+[2026-04-24 11:27:38,489][src.corpus.book_detector][INFO] - Detected 2 books (target: 26)
+[2026-04-24 11:27:38,489][src.corpus.book_detector][WARNING] - Missing books: {"The Complete Ninja's Handbook", "Player's Option: Combat & Tactics", "The Complete Ranger's Handbook", 'The Complete Book of Elves', 'The Complete Book of Dwarves', "The Complete Druid's Handbook", "The Complete Wizard's Handbook", 'Legends & Lore', 'Dungeon Master Option: High-Level Campaigns', 'Tome of Magic', "Player's Option: Spells & Magic", "The Complete Paladin's Handbook", "The Complete Priest's Handbook", 'The Complete Book of Humanoids', 'The Complete Book of Gnomes & Halflings', 'Encyclopedia Magica Volume I', 'Monstrous Manual', 'Arms and Equipment Guide', 'Encyclopedia Magica Volume II', "Player's Option: Skills & Powers", 'The Complete Psionics Handbook', "The Complete Thief's Handbook", "The Complete Bard's Handbook", "The Complete Fighter's Handbook"}
+[2026-04-24 11:27:38,490][rag_benchmark][INFO] - Chunking with strategy: recursive
+[2026-04-24 11:27:58,764][src.chunkers][INFO] -   Chunking 'Player's Handbook': 7 nodes
+[2026-04-24 11:27:59,290][src.chunkers][INFO] -   Chunking 'Dungeon Master Guide': 3 nodes
+[2026-04-24 11:27:59,294][src.chunkers][INFO] - Total chunks (recursive): 2
+[2026-04-24 11:27:59,306][rag_benchmark][INFO] - Stage 'chunk' completed successfully.
