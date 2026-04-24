@@ -1,4 +1,4 @@
-# RAG Chunking × Retrieval Benchmark v3
+# RAG Chunking × Retrieval Benchmark
 
 A comprehensive, phased benchmark system designed to evaluate chunking strategies and retrieval methods for Retrieval-Augmented Generation (RAG) using the **AD&D 2nd Edition** corpus as a challenging, structure-heavy dataset.
 
