@@ -291,6 +291,7 @@ def _make_llm(cfg, project_root, tracker) -> LLMClient:
         max_tokens=int(cfg.llm.max_tokens),
         cache_dir=str(project_root / cfg.paths.cache),
         cost_tracker=tracker,
+        provider=cfg.llm.get("provider", None),
     )
 
 

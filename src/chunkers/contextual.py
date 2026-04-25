@@ -44,6 +44,7 @@ class ContextualChunker(BaseChunker):
             max_tokens=200,
             cache_dir=str(project_root / cfg.paths.cache),
             cost_tracker=self.cost_tracker,
+            provider=cfg.llm.get("provider", None),
         )
 
     def chunk_book(self, book, nodes, full_text):

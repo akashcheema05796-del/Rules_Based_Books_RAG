@@ -110,6 +110,7 @@ def generate_gold_standard(cfg: DictConfig, project_root: Path) -> None:
         model=cfg.llm.model, temperature=0, max_tokens=4096,
         cache_dir=str(project_root / cfg.paths.cache),
         cost_tracker=tracker,
+        provider=cfg.llm.get("provider", None),
     )
     embedder = EmbeddingClient(
         model=cfg.embedding.model, dimensions=cfg.embedding.dimensions,

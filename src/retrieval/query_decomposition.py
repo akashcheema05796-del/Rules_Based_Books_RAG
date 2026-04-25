@@ -30,7 +30,8 @@ class QueryDecompositionRetriever(BaseRetriever):
         super().__init__(cfg, project_root, chunking_strategy)
         self.dense = DenseRetriever(cfg, project_root, chunking_strategy)
         self.llm = LLMClient(model=cfg.llm.model, temperature=0, max_tokens=300,
-                             cache_dir=str(project_root / cfg.paths.cache))
+                             cache_dir=str(project_root / cfg.paths.cache),
+                             provider=cfg.llm.get("provider", None))
 
     def load_index(self):
         self.dense.load_index()
