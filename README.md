@@ -1,107 +1,254 @@
-# RAG Chunking × Retrieval Benchmark
+# RAG Chunking x Retrieval Benchmark
 
-A comprehensive, phased benchmark system designed to evaluate chunking strategies and retrieval methods for Retrieval-Augmented Generation (RAG) using the **AD&D 2nd Edition** corpus as a challenging, structure-heavy dataset.
+A comprehensive, phased benchmark system that evaluates **5 chunking strategies** against **8 retrieval methods** for Retrieval-Augmented Generation (RAG), using the **AD&D 2nd Edition** rulebook corpus (15 MB of dense, structure-heavy markdown) as the evaluation dataset.
+
+---
+
+## Pipeline Status
+
+| Stage | Status | Output |
+|-------|--------|--------|
+| `parse` | **Done** | 62,874 AST nodes from 15 MB corpus |
+| `chunk` (recursive) | **Done** | 10,419 chunks |
+| `chunk` (markdown_hierarchical) | **Done** | 10,961 chunks |
+| `chunk` (table_aware) | **Done** | 10,989 chunks |
+| `chunk` (contextual) | Pending | Requires LLM API spend |
+| `chunk` (adaptive) | Pending | Requires embedding API spend |
+| `goldset` | **Done** | 110 Q&A pairs (100 stratified + 10 distractors) |
+| `index` | Pending | Build ChromaDB + BM25 indices |
+| `eval_phase1/2/3` | Pending | Full benchmark run |
+| `report` | Pending | Statistical report + figures |
+
+---
+
+## Architecture Overview
+
+```
+data/raw/*.md
+    └─► parse  ──► AST nodes (62,874)
+                       └─► chunk  ──► 5 strategies ──► chunks.jsonl
+                                           └─► index  ──► ChromaDB + BM25
+                                                             └─► eval  ──► metrics
+                                                                            └─► report
+data/gold/gold_standard.jsonl  (110 Q&A pairs)  ──────────────────► eval
+```
+
+---
 
 ## Features
 
-- **Robust Corpus Parsing**: Uses an AST-based markdown parser to safely extract headers, code blocks, and complex tabular data without severing semantic meaning.
-- **5 Custom Chunking Strategies**:
-  - `recursive`: LangChain-style recursive character splitting (512 tokens).
-  - `markdown_hierarchical`: Structural chunking strictly respecting header boundaries.
-  - `contextual`: LLM-powered (Prompt Caching) document-level prefix injection for isolated chunks.
-  - `table_aware`: Preserves entire markdown tables within single chunks.
-  - `adaptive`: Dynamically merges sentences based on cosine similarity thresholding (Sentence Transformers).
-- **8 Retrieval Pipelines**:
-  - `dense`: Standard ChromaDB cosine similarity.
-  - `bm25`: Sparse keyword search via `rank_bm25`.
-  - `hybrid_rrf`: Dense + BM25 fusion using Reciprocal Rank Fusion.
-  - `hybrid_rerank`: Hybrid RRF + `BAAI/bge-reranker-v2-m3` cross-encoder reranking.
-  - `metadata_filter`: LLM-powered query intent parsing (e.g., table vs. text) to filter ChromaDB.
-  - `small_to_big`: Retrieves micro-chunks (200 tokens) but expands context to parent sections (2000 tokens).
-  - `hyde`: Hypothetical Document Embeddings via LLM generation.
-  - `query_decomposition`: Multi-hop query breakdown into sub-queries.
-- **Automated Evaluation Engine**:
-  - Computes classic retrieval metrics (Recall@k, MRR, nDCG@k) using precise span-overlap calculations.
-  - RAGAS-style Generation Metrics (Faithfulness, Correctness, Precision) using an LLM Judge.
-  - Statistical analysis computing Bootstrap 95% CIs and Holm-Bonferroni corrected pairwise significance tests.
-- **Cost Tracking**: Enforces hard budget limits per pipeline phase for OpenAI and Anthropic API usage.
+### Corpus Parsing (`src/corpus/parser.py`)
+- **Auto-selects parser by file size**:
+  - Files **> 1 MB** → fast line-by-line regex scanner (~0.8 s for 15 MB)
+  - Files **≤ 1 MB** → full `markdown-it-py` AST parser
+- Extracts headings (h1–h6), fenced code blocks, pipe tables, and paragraphs with precise `char_start`/`char_end` offsets
 
-## Setup
+### Chunking Strategies (`src/chunkers/`)
+| Strategy | Description | Chunks |
+|----------|-------------|--------|
+| `recursive` | LangChain recursive character splitting, 512 tokens, 77-token overlap | 10,419 |
+| `markdown_hierarchical` | Split on h2/h3/h4 boundaries; oversized (>2000 tok) sections get recursive fallback | 10,961 |
+| `contextual` | Recursive base + GPT-4o–generated context blurb prepended to each chunk | — |
+| `table_aware` | Each table = one atomic chunk with ~200-token preceding context; non-table falls to recursive | 10,989 |
+| `adaptive` | Sentence embeddings → merge adjacent sentences while cosine sim > 0.75 and tokens < 512 | — |
 
-1. **Install Dependencies**:
-   ```bash
-   python -m venv venv
-   # Windows
-   .\venv\Scripts\activate
-   # Linux/Mac
-   source venv/bin/activate
-   
-   pip install -r requirements.txt
-   ```
+### Retrieval Methods (`src/retrieval/`)
+| Method | Description |
+|--------|-------------|
+| `dense` | ChromaDB cosine similarity (HNSW index, `text-embedding-3-small`) |
+| `bm25` | BM25Okapi sparse keyword search |
+| `hybrid_rrf` | Dense + BM25 fused via Reciprocal Rank Fusion (k=60) |
+| `hybrid_rerank` | Hybrid RRF → `BAAI/bge-reranker-v2-m3` cross-encoder reranking |
+| `metadata_filter` | LLM parses query intent (table vs. text, book scope) → filtered ChromaDB query |
+| `small_to_big` | Retrieve 200-token micro-chunks; expand to 2000-token parent sections |
+| `hyde` | LLM generates a hypothetical answer → embed answer → retrieve |
+| `query_decomposition` | LLM breaks multi-hop query into sub-queries; merge results via RRF |
 
-2. **Configure Environment**:
-   Copy `.env.example` to `.env` and add your API keys:
-   ```env
-   OPENAI_API_KEY=your_openai_key
-   ANTHROPIC_API_KEY=your_anthropic_key
-   ```
+### Gold Standard Dataset (`data/gold/`)
+- **110 Q&A pairs** generated by GPT-4o from random corpus sections
+- Stratified across 6 question types + 10 distractors (unanswerable from corpus)
+- Each entry: `query`, `reference_answer`, `reference_contexts` (char offsets), `is_multi_hop`
 
-3. **Provide Corpus**:
-   Place the master markdown file `DnD_Second_edition__all_26_books.md` inside `data/raw/`.
+| Type | Count |
+|------|-------|
+| `lore` | 25 |
+| `mechanical` | 25 |
+| `tabular` | 20 |
+| `cross_reference` | 15 |
+| `monster` | 10 |
+| `numeric` | 5 |
+| `distractor` | 10 |
 
-## Usage
+### Evaluation Engine (`src/evaluation/`)
+- **Retrieval metrics**: Recall@k, MRR, nDCG@k, Hit@k — all computed via ≥50% span-overlap of shorter span
+- **Generation metrics**: Faithfulness, Answer Correctness, Context Precision (RAGAS-style, LLM judge)
+- **Statistics**: Bootstrap 95% CI, paired bootstrap significance test, Holm-Bonferroni correction
+- **Cost tracking**: Hard budget cap per stage; aborts with projection if exceeded
 
-This project uses `Hydra` for configuration management. You can run individual stages of the pipeline using `main.py` or the provided `Makefile`.
+---
 
-### Pipeline Stages
+## Quick Start
 
+### 1. Install dependencies
 ```bash
-# 1. Profile the corpus and detect books
-python main.py stage=parse
+python -m venv venv
+# Windows
+.\venv\Scripts\activate
+# Linux / macOS
+source venv/bin/activate
 
-# 2. Generate the Gold Standard evaluation dataset
-python main.py stage=goldset
-
-# 3. Execute all chunking strategies
-python main.py stage=chunk
-
-# 4. Build Dense and BM25 indices
-python main.py stage=index
-
-# 5. Run Phase 1 Evaluation (Chunking Isolation - Dense Only)
-python main.py stage=eval_phase1
-
-# 6. Run Phase 2 Evaluation (Full Retrieval Sweep)
-python main.py stage=eval_phase2
-
-# 7. Generate final report and statistical plots
-python main.py stage=report
+pip install -r requirements.txt
 ```
 
-Or using `make`:
-```bash
-make all        # Runs the complete pipeline end-to-end
-make clean      # Cleans up the data/ and results/ directories
-make test       # Runs the pytest suite
+### 2. Set API keys
+Copy `.env.example` to `.env`:
+```env
+OPENAI_API_KEY=sk-...        # Required — embeddings + GPT-4o for generation
+ANTHROPIC_API_KEY=sk-ant-... # Optional — only needed if switching back to Claude
 ```
+
+### 3. Add the corpus
+Place the corpus file at:
+```
+data/raw/DnD_Second_edition__all_26_books.md
+```
+
+---
+
+## Running the Pipeline
+
+All stages use [Hydra](https://hydra.cc/) config management via `main.py`:
+
+```bash
+# Parse corpus into AST nodes
+python main.py +stage=parse
+
+# Generate gold-standard Q&A pairs (uses GPT-4o, ~$0.30 for 100 questions)
+python main.py +stage=goldset
+
+# Run all chunking strategies
+python main.py +stage=chunk
+
+# Build vector + BM25 indices
+python main.py +stage=index
+
+# Evaluate — Phase 1: chunking isolation (dense retrieval only)
+python main.py +stage=eval_phase1
+
+# Evaluate — Phase 2: full retrieval sweep (all 8 methods)
+python main.py +stage=eval_phase2
+
+# Generate final report + plots
+python main.py +stage=report
+```
+
+Or run the full pipeline end-to-end:
+```bash
+make all
+```
+
+Other make targets:
+```bash
+make parse      # Parse only
+make chunk      # Chunk only
+make goldset    # Generate Q&A pairs
+make test       # Run pytest suite
+make clean      # Remove data/ and results/ outputs
+```
+
+---
 
 ## Testing
 
-The project includes a robust test suite covering corpus parsing, metrics math, and chunking integrity.
+**165 tests, 0 failures.**
+
 ```bash
 pytest tests/ -v
 ```
 
-## Directory Structure
+| Test File | Coverage |
+|-----------|----------|
+| `test_parser_fast.py` | Fast regex parser, routing by file size, parity with markdown-it-py |
+| `test_chunkers.py` | All 3 deterministic chunkers, `chunk_corpus()` API, heading index |
+| `test_metrics.py` | Span overlap, Recall@k, nDCG@k, MRR, bootstrap CI, Holm-Bonferroni |
+| `test_retrieval.py` | BM25, hybrid RRF, `is_relevant` with char offsets |
+| `test_goldset.py` | `_locate_anchor`, `_sample_corpus_section`, `_filter_candidates` |
+| `test_cost_tracker.py` | CostTracker, BudgetExceededError, per-model pricing |
+| `test_cache.py` | BenchmarkCache read/write, hit rate, namespace isolation |
+| `test_corpus.py` | AST node schema, BookSpan, ChunkMetadata |
+| `smoke_test.py` | End-to-end parse → chunk smoke test with mocked APIs |
 
-- `configs/`: Hydra YAML configurations.
-- `src/`: Core source code.
-  - `chunkers/`: Chunking logic.
-  - `corpus/`: Parsing and modeling.
-  - `evaluation/`: Metrics and statistical testing.
-  - `goldset/`: Dataset generation.
-  - `retrieval/`: Indexing and search methods.
-  - `utils/`: Caching, LLM clients, and embeddings.
-- `tests/`: Pytest suite.
-- `data/`: Generated caches, indices, and processed chunks.
-- `results/`: CSV benchmarks, routing tables, and visual plots.
+---
+
+## Project Structure
+
+```
+.
+├── configs/
+│   ├── base.yaml                # Hydra base config (model, paths, budgets)
+│   └── prompts/
+│       └── contextual.md        # Prompt template for contextual chunking
+├── data/
+│   ├── raw/                     # Source corpus (.md) — not committed
+│   ├── interim/                 # parse_summary.json, AST cache
+│   ├── processed/               # chunks.jsonl per strategy
+│   ├── gold/                    # gold_standard.jsonl + gold_meta.json
+│   ├── vector_store/            # ChromaDB persistent indices
+│   ├── bm25_index/              # Pickled BM25 indices
+│   └── .cache/                  # diskcache — embeddings, LLM responses
+├── src/
+│   ├── chunkers/                # 5 chunking strategy implementations
+│   ├── corpus/                  # Parser, AST models, book_detector
+│   ├── evaluation/              # Metrics, generation, statistics, report
+│   ├── goldset/                 # Q&A generator + validator
+│   ├── retrieval/               # 8 retrieval method implementations
+│   └── utils/                   # LLMClient, EmbeddingClient, cache, cost tracker
+├── tests/                       # pytest suite (165 tests)
+├── notebooks/                   # Exploratory analysis notebooks
+├── results/                     # Benchmark CSVs, figures (generated)
+├── main.py                      # Hydra entry point
+├── requirements.txt             # Pinned direct dependencies
+└── requirements.lock            # Full frozen environment (pip freeze)
+```
+
+---
+
+## Configuration
+
+Key settings in `configs/base.yaml`:
+
+```yaml
+llm:
+  provider: "openai"              # "openai" | "anthropic"
+  model: "gpt-4o"
+  temperature: 0
+
+embedding:
+  model: "text-embedding-3-small"
+  dimensions: 1536
+
+cost_budget:
+  goldset: 10.0                   # USD hard cap per stage
+  phase1: 10.0
+  phase2: 50.0
+  contextual_chunking: 15.0
+```
+
+---
+
+## Cost Summary
+
+| Stage | Model | Approx. Cost |
+|-------|-------|-------------|
+| `goldset` (100 Q&A) | GPT-4o | ~$0.30 |
+| `chunk` (contextual, 11K chunks) | GPT-4o | ~$3–5 |
+| `chunk` (adaptive, embeddings) | text-embedding-3-small | ~$0.05 |
+| `index` (all strategies) | text-embedding-3-small | ~$0.30 |
+| `eval_phase1` | GPT-4o (judge) | ~$5–10 |
+| `eval_phase2` | GPT-4o (judge) | ~$20–30 |
+
+---
+
+## License
+
+See [NOTICE.md](NOTICE.md). The AD&D 2nd Edition corpus is used for research purposes only and is not included in this repository.

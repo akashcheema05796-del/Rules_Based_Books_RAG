@@ -1,55 +1,56 @@
-# RAG Chunking x Retrieval Benchmark v3 — Dependencies
+# RAG Chunking x Retrieval Benchmark — Direct Dependencies
 # Install: pip install -r requirements.txt
+# Reproducible frozen install: pip install -r requirements.lock
 
-# --- Core LLM & Embedding ---
-anthropic>=0.39.0
-openai>=1.50.0
-tiktoken>=0.7.0
+# ── LLM & Embedding ───────────────────────────────────────────────────────────
+openai>=1.50.0                 # GPT-4o, text-embedding-3-small (primary provider)
+anthropic>=0.39.0              # Claude — optional, kept for fallback / future use
+tiktoken>=0.7.0                # Token counting (cl100k_base encoding)
 
-# --- LangChain (chunking & text splitting) ---
+# ── LangChain (text splitting) ────────────────────────────────────────────────
 langchain>=0.3.0
 langchain-text-splitters>=0.3.0
 langchain-community>=0.3.0
 
-# --- Vector Store ---
-chromadb>=1.5.0
+# ── Vector Store ──────────────────────────────────────────────────────────────
+chromadb>=1.5.0                # Persistent HNSW vector index
 
-# --- Sparse Retrieval ---
-rank_bm25>=0.2.2
+# ── Sparse Retrieval ──────────────────────────────────────────────────────────
+rank_bm25>=0.2.2               # BM25Okapi sparse index
 
-# --- Reranker ---
-sentence-transformers>=3.0.0
-FlagEmbedding>=1.2.0
+# ── Reranker ──────────────────────────────────────────────────────────────────
+sentence-transformers>=3.0.0   # BAAI/bge-reranker-v2-m3 cross-encoder
+FlagEmbedding>=1.2.0           # FlagReranker acceleration
 
-# --- Evaluation ---
-ragas>=0.2.0
+# ── Evaluation ────────────────────────────────────────────────────────────────
+ragas>=0.2.0                   # RAGAS-style generation metrics
 
-# --- Markdown Parsing ---
-markdown-it-py>=3.0.0
+# ── Markdown Parsing ──────────────────────────────────────────────────────────
+markdown-it-py>=3.0.0          # Full AST parser (files <= 1 MB)
 
-# --- Configuration ---
-hydra-core>=1.3.0
-omegaconf>=2.3.0
-pydantic>=2.0.0
-python-dotenv>=1.0.0
-PyYAML>=6.0.0
+# ── Configuration ─────────────────────────────────────────────────────────────
+hydra-core>=1.3.0              # Stage-based pipeline config management
+omegaconf>=2.3.0               # Typed config object
+pydantic>=2.0.0                # Data models (ASTNode, ChunkMetadata, GoldEntry)
+python-dotenv>=1.0.0           # .env loading with find_dotenv
+PyYAML>=6.0.0                  # YAML config support
 
-# --- Data & Analysis ---
-pandas>=2.0.0
-numpy>=1.24.0
-scipy>=1.11.0
+# ── Data & Numerics ───────────────────────────────────────────────────────────
+pandas>=2.0.0                  # Results aggregation and CSV output
+numpy>=1.24.0                  # Embeddings, cosine similarity, bootstrap
+scipy>=1.11.0                  # Statistical tests
 
-# --- Resilience & Caching ---
-tenacity>=8.2.0
-diskcache>=5.6.0
+# ── Caching & Resilience ──────────────────────────────────────────────────────
+diskcache>=5.6.0               # Persistent disk cache (embeddings, LLM responses)
+tenacity>=8.2.0                # Exponential-backoff retry for API calls
 
-# --- Progress ---
-tqdm>=4.66.0
+# ── Progress ──────────────────────────────────────────────────────────────────
+tqdm>=4.66.0                   # Progress bars for long-running stages
 
-# --- Testing ---
+# ── Testing ───────────────────────────────────────────────────────────────────
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
 
-# --- Plotting ---
-matplotlib>=3.8.0
-seaborn>=0.13.0
+# ── Plotting ──────────────────────────────────────────────────────────────────
+matplotlib>=3.8.0              # Benchmark visualisations
+seaborn>=0.13.0                # Statistical plot styling
