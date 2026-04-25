@@ -87,7 +87,7 @@ def _build_dense_index(strategy_name, chunks, cfg, project_root):
         model=cfg.embedding.model,
         dimensions=cfg.embedding.dimensions,
         batch_size=cfg.embedding.batch_size,
-        cache_dir=str(project_root / ".cache"),
+        cache_dir=str(project_root / cfg.paths.cache),
     )
 
     # Batch add to ChromaDB

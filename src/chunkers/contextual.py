@@ -42,7 +42,7 @@ class ContextualChunker(BaseChunker):
             model=cfg.llm.model,
             temperature=cfg.llm.temperature,
             max_tokens=200,
-            cache_dir=str(project_root / ".cache"),
+            cache_dir=str(project_root / cfg.paths.cache),
             cost_tracker=self.cost_tracker,
         )
 

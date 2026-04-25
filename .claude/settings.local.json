@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:/Users/Total/Downloads/Research Paper RAG/venv/Scripts/python.exe\" -m pip freeze)",
+      "Bash(\"C:/Users/Total/Downloads/Research Paper RAG/venv/Scripts/python.exe\" -c \"from src.evaluation.runner import run_phase1, run_phase2, run_phase3; from src.evaluation.report import generate_report; from src.evaluation.generation_metrics import compute_generation_metrics; from src.evaluation.answer_generator import generate_answer, is_abstention, abstention_rate; from src.goldset.generator import generate_gold_standard; from src.goldset.validator import emit_review_sheet, ingest_reviews, validate_gold_standard; print\\('imports ok'\\)\")"
+    ]
+  }
+}

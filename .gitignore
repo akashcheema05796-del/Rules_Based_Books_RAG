@@ -1,7 +1,10 @@
 venv/
 .env
+# Copyrighted corpus + any derivative artifacts (spec §13.4).
+# AD&D 2e material is © Wizards of the Coast / Hasbro. Do NOT commit
+# data/raw/, generated chunks, vector/sparse indices, or sample chunks.
 data/
-results/
+results/chunk_samples/
 .cache/
 process.log
 __pycache__/
@@ -10,3 +13,6 @@ __pycache__/
 .coverage
 htmlcov/
 *.sqlite3
+# Hydra output dirs
+outputs/
+multirun/

@@ -34,6 +34,15 @@ parse:
 goldset:
 	$(PYTHON) main.py stage=goldset
 
+validate-gold:
+	$(PYTHON) main.py stage=validate_gold validate.action=static
+
+review-sheet:
+	$(PYTHON) main.py stage=validate_gold validate.action=emit
+
+freeze-gold:
+	$(PYTHON) main.py stage=validate_gold validate.action=ingest
+
 chunk:
 	$(PYTHON) main.py stage=chunk chunking=$(CHUNKING)
 

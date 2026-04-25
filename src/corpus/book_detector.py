@@ -19,11 +19,24 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_title(title: str) -> str:
-    """Normalize a title for matching: lowercase, strip punctuation/trademarks."""
-    title = title.lower().strip()
-    title = title.replace("®", "").replace("™", "").replace("©", "")
-    title = re.sub(r'[^\w\s]', '', title)
-    title = re.sub(r'\s+', ' ', title).strip()
+    """Normalize a title for matching.
+
+    Handles: lowercase, NFKC, replacement char / trademarks / curly quotes,
+    markdown bold+italic markers (``**``, ``_``), then strips all non-word
+    non-space chars.
+    """
+    title = unicodedata.normalize("NFKC", title).lower().strip()
+    # Drop encoding-replacement + trademark glyphs
+    for ch in ("\uFFFD", "\u00AE", "\u2122", "\u00A9"):
+        title = title.replace(ch, "")
+    # Drop markdown emphasis markers so `**The Complete Book of Elves**` normalizes
+    title = title.replace("**", " ").replace("__", " ").replace("*", " ").replace("_", " ")
+    # Normalize curly quotes and dashes before the punctuation sweep
+    title = title.replace("\u2019", "'").replace("\u2018", "'")
+    title = title.replace("\u201C", '"').replace("\u201D", '"')
+    title = title.replace("\u2013", "-").replace("\u2014", "-")
+    title = re.sub(r"[^\w\s]", " ", title)
+    title = re.sub(r"\s+", " ", title).strip()
     return title
 
 
@@ -56,38 +69,54 @@ def detect_books(
     text = raw_path.read_text(encoding="utf-8")
     total_chars = len(text)
 
-    # Find all h2 headings
+    # Find all h2 headings from the AST
     h2_nodes = [n for n in ast_nodes if n.node_type == "heading" and n.level == 2]
-    logger.info(f"Found {len(h2_nodes)} h2 headers")
+    logger.info(f"AST produced {len(h2_nodes)} h2 headers")
 
-    # Match against manifest
-    matched = []
-    unmatched = []
-    used_titles = set()
+    # Regex fallback: the AST sometimes loses h2 nodes. Rescan the raw text and
+    # synthesize ASTNode-like records with correct char_start so downstream code
+    # keeps working.
+    if len(h2_nodes) < 50:
+        logger.warning("AST h2 count < 50; scanning raw text with regex fallback.")
+        h2_nodes = []
+        for m in re.finditer(r"^##[ \t]+(.+?)[ \t]*$", text, flags=re.MULTILINE):
+            node = ASTNode(
+                node_type="heading", level=2,
+                content=m.group(1).strip(),
+                raw_content=m.group(0),
+                char_start=m.start(), char_end=m.end(),
+            )
+            h2_nodes.append(node)
+        logger.info(f"Regex fallback found {len(h2_nodes)} h2 headers")
 
-    for node in h2_nodes:
-        normalized = _normalize_title(node.content)
-        # Try exact match
-        if normalized in normalized_manifest:
-            original_title = normalized_manifest[normalized]
-            if original_title not in used_titles:
-                matched.append((node, original_title))
-                used_titles.add(original_title)
+    # Match against manifest. Strategy: for each manifest title, pick the
+    # earliest unused h2 whose normalized text contains the manifest title as a
+    # substring. This is more robust than greedy per-node matching, which mis-
+    # assigns long/short title pairs.
+    matched: list[tuple] = []
+    used_nodes: set[int] = set()
+    used_titles: set[str] = set()
+
+    norm_nodes = [(i, _normalize_title(n.content)) for i, n in enumerate(h2_nodes)]
+    # Process manifest titles longest-first so `Dungeon Master Option: High-Level
+    # Campaigns` is matched before `Dungeon Master Guide` doesn't steal its node.
+    ordered_manifest = sorted(
+        normalized_manifest.items(), key=lambda kv: -len(kv[0])
+    )
+    for norm_key, orig_title in ordered_manifest:
+        best_idx = None
+        for i, norm_text in norm_nodes:
+            if i in used_nodes:
                 continue
-
-        # Try fuzzy match (substring)
-        found = False
-        for norm_key, orig_title in normalized_manifest.items():
-            if orig_title in used_titles:
-                continue
-            if norm_key in normalized or normalized in norm_key:
-                matched.append((node, orig_title))
-                used_titles.add(orig_title)
-                found = True
+            if norm_key in norm_text or norm_text == norm_key:
+                best_idx = i
                 break
+        if best_idx is not None:
+            matched.append((h2_nodes[best_idx], orig_title))
+            used_nodes.add(best_idx)
+            used_titles.add(orig_title)
 
-        if not found:
-            unmatched.append(node)
+    unmatched = [h2_nodes[i] for i, _ in norm_nodes if i not in used_nodes]
 
     # Sort matched by position
     matched.sort(key=lambda x: x[0].char_start)
@@ -140,24 +169,57 @@ def get_book_for_offset(books: list[BookSpan], char_offset: int) -> Optional[Boo
     return None
 
 
+def build_heading_index(ast_nodes: list[ASTNode]) -> tuple[list, list[int]]:
+    """Pre-compute sorted heading nodes + their char_starts for fast lookup.
+
+    Call once per corpus/chunking pass and pass the result to
+    `get_chapter_path_fast` for O(log n) per chunk instead of O(n).
+
+    Returns:
+        (sorted_heading_nodes, sorted_starts)
+    """
+    headings = sorted(
+        (n for n in ast_nodes if n.node_type == "heading"),
+        key=lambda n: n.char_start,
+    )
+    starts = [n.char_start for n in headings]
+    return headings, starts
+
+
 def get_chapter_path(
     ast_nodes: list[ASTNode],
     char_offset: int,
     max_depth: int = 4,
+    _heading_index: tuple | None = None,
 ) -> list[str]:
     """Get the chapter path (heading hierarchy) for a character offset.
 
     Returns list like ["Chapter 3", "The Warrior", "Fighters"].
-    """
-    path = []
-    heading_nodes = [n for n in ast_nodes if n.node_type == "heading"]
 
+    Pass `_heading_index = build_heading_index(ast_nodes)` once per batch to
+    avoid re-sorting on every call (critical for large corpora).
+    """
+    import bisect
+
+    if _heading_index is not None:
+        heading_nodes, starts = _heading_index
+    else:
+        heading_nodes = sorted(
+            (n for n in ast_nodes if n.node_type == "heading"),
+            key=lambda n: n.char_start,
+        )
+        starts = [n.char_start for n in heading_nodes]
+
+    path = []
     for level in range(2, max_depth + 1):
+        idx = bisect.bisect_right(starts, char_offset) - 1
+        j = idx
         best = None
-        for h in heading_nodes:
-            if h.level == level and h.char_start <= char_offset:
-                if best is None or h.char_start > best.char_start:
-                    best = h
+        while j >= 0:
+            if heading_nodes[j].level == level:
+                best = heading_nodes[j]
+                break
+            j -= 1
         if best:
             path.append(best.content)
 

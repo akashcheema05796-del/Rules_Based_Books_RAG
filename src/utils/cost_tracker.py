@@ -20,6 +20,14 @@ COST_PER_1M_TOKENS = {
     # OpenAI embeddings
     "text-embedding-3-small": {"input": 0.02},
     "text-embedding-3-large": {"input": 0.13},
+    # OpenAI chat
+    "gpt-4o":            {"input": 2.50,  "output": 10.00},
+    "gpt-4o-mini":       {"input": 0.15,  "output": 0.60},
+    "gpt-4.1":           {"input": 2.00,  "output": 8.00},
+    "gpt-4.1-mini":      {"input": 0.40,  "output": 1.60},
+    "gpt-4.1-nano":      {"input": 0.10,  "output": 0.40},
+    "o1":                {"input": 15.00, "output": 60.00},
+    "o3-mini":           {"input": 1.10,  "output": 4.40},
     # Anthropic Claude
     "claude-sonnet-4-5-20241022": {"input": 3.00, "output": 15.00},
     # With prompt caching (Anthropic)

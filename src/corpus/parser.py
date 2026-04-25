@@ -1,9 +1,11 @@
 """
-Markdown AST parser using markdown-it-py (spec §4.3).
+Markdown AST parser (spec §4.3).
 
-Preserves tables as atomic nodes, code blocks as atomic,
-lists with depth annotation, blockquotes atomic when short.
-All chunkers consume AST nodes, not raw text.
+For files ≤ 1 MB  — uses markdown-it-py for full fidelity.
+For files  > 1 MB — uses a fast regex-based scanner that handles the corpus
+size (15 MB) in seconds instead of minutes. The regex scanner extracts:
+  headings (h1-h6), fenced code blocks, pipe tables, and paragraphs.
+Both paths return the same list[ASTNode] schema.
 """
 
 import json
@@ -12,34 +14,158 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from markdown_it import MarkdownIt
-
 from src.corpus.models import ASTNode
 
 logger = logging.getLogger(__name__)
+
+# Files larger than this use the fast regex scanner.
+_FAST_PARSE_THRESHOLD_BYTES = 1 * 1024 * 1024  # 1 MB
 
 
 def parse_corpus(raw_path: Path) -> list[ASTNode]:
     """Parse a markdown corpus file into AST nodes.
 
-    Args:
-        raw_path: Path to the raw markdown file.
-
-    Returns:
-        List of top-level ASTNode instances.
+    Automatically chooses between markdown-it-py (small files) and the
+    fast regex scanner (large files ≥ 1 MB).
     """
     logger.info(f"Reading corpus from {raw_path}")
     text = raw_path.read_text(encoding="utf-8")
-    lines = text.split("\n")
-    total_chars = len(text)
-    logger.info(f"Corpus: {len(lines)} lines, {total_chars} chars")
+    logger.info(f"Corpus: {len(text):,} chars")
 
+    if raw_path.stat().st_size > _FAST_PARSE_THRESHOLD_BYTES:
+        logger.info("Large file detected — using fast regex parser")
+        nodes = _parse_regex(text)
+    else:
+        logger.info("Using markdown-it-py parser")
+        nodes = _parse_markdownit(text)
+
+    logger.info(f"Parsed {len(nodes)} top-level AST nodes")
+    return nodes
+
+
+def _parse_regex(text: str) -> list[ASTNode]:
+    """Fast line-by-line regex parser for large markdown files.
+
+    Extracts headings, fenced code blocks, pipe tables, and paragraph text.
+    Runs in O(n) on file length — handles 15 MB in under 5 seconds.
+    """
+    nodes: list[ASTNode] = []
+    lines = text.split("\n")
+    # Pre-compute line→char offset map
+    line_offsets = [0] * (len(lines) + 1)
+    for i, line in enumerate(lines):
+        line_offsets[i + 1] = line_offsets[i] + len(line) + 1  # +1 for \n
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # --- Heading ---
+        m = re.match(r'^(#{1,6})\s+(.*)', line)
+        if m:
+            level = len(m.group(1))
+            content = m.group(2).strip()
+            char_start = line_offsets[i]
+            char_end = line_offsets[i + 1]
+            nodes.append(ASTNode(
+                node_type="heading", level=level, content=content,
+                raw_content=line, char_start=char_start, char_end=char_end,
+            ))
+            i += 1
+            continue
+
+        # --- Fenced code block ---
+        if line.strip().startswith("```") or line.strip().startswith("~~~"):
+            fence_char = line.strip()[:3]
+            info = line.strip()[3:].strip()
+            start_line = i
+            char_start = line_offsets[i]
+            i += 1
+            block_lines = [line]
+            while i < len(lines):
+                block_lines.append(lines[i])
+                if lines[i].strip() == fence_char:
+                    i += 1
+                    break
+                i += 1
+            char_end = line_offsets[i] if i < len(line_offsets) else line_offsets[-1]
+            raw = "\n".join(block_lines)
+            nodes.append(ASTNode(
+                node_type="code_block", content=raw, raw_content=raw,
+                char_start=char_start, char_end=char_end,
+                meta={"info": info},
+            ))
+            continue
+
+        # --- Pipe table ---
+        if "|" in line and line.strip().startswith("|"):
+            start_line = i
+            char_start = line_offsets[i]
+            table_lines = []
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
+                table_lines.append(lines[i])
+                i += 1
+            char_end = line_offsets[i] if i < len(line_offsets) else line_offsets[-1]
+            raw = "\n".join(table_lines)
+            table_node = _parse_table(raw, char_start, char_end)
+            if table_node:
+                nodes.append(table_node)
+            else:
+                nodes.append(ASTNode(
+                    node_type="paragraph", content=raw, raw_content=raw,
+                    char_start=char_start, char_end=char_end,
+                ))
+            continue
+
+        # --- Blank line (skip) ---
+        if not line.strip():
+            i += 1
+            continue
+
+        # --- Paragraph: accumulate non-empty, non-special lines ---
+        start_line = i
+        char_start = line_offsets[i]
+        para_lines = []
+        while i < len(lines):
+            l = lines[i]
+            if not l.strip():
+                break
+            if re.match(r'^#{1,6}\s', l):
+                break
+            if l.strip().startswith("```") or l.strip().startswith("~~~"):
+                break
+            if "|" in l and l.strip().startswith("|"):
+                break
+            para_lines.append(l)
+            i += 1
+        if para_lines:
+            char_end = line_offsets[i] if i < len(line_offsets) else line_offsets[-1]
+            raw = "\n".join(para_lines)
+            # Re-check: does this paragraph look like a table?
+            if _is_table_content(raw):
+                table_node = _parse_table(raw, char_start, char_end)
+                if table_node:
+                    nodes.append(table_node)
+                    continue
+            nodes.append(ASTNode(
+                node_type="paragraph", content=raw.replace("\n", " ").strip(),
+                raw_content=raw, char_start=char_start, char_end=char_end,
+            ))
+        else:
+            i += 1
+
+    return nodes
+
+
+def _parse_markdownit(text: str) -> list[ASTNode]:
+    """Original markdown-it-py parser (used for small files ≤ 1 MB)."""
+    from markdown_it import MarkdownIt
+    lines = text.split("\n")
     md = MarkdownIt("default", {"html": True})
     md.enable("table")
     tokens = md.parse(text)
-
     nodes = _tokens_to_nodes(tokens, text, lines)
-    logger.info(f"Parsed {len(nodes)} top-level AST nodes")
+    nodes = _detect_missed_tables(nodes, lines, text)
     return nodes
 
 
@@ -55,12 +181,15 @@ def _tokens_to_nodes(tokens, full_text, lines) -> list[ASTNode]:
             content_parts = []
             i += 1
             while i < len(tokens) and tokens[i].type != "heading_close":
-                if tokens[i].content:
-                    content_parts.append(tokens[i].content)
+                # Prefer children (text nodes) over raw content to avoid duplication.
+                # markdown-it inline tokens carry both .content and .children; using
+                # both would duplicate the heading text.
                 if tokens[i].children:
                     for child in tokens[i].children:
                         if child.content:
                             content_parts.append(child.content)
+                elif tokens[i].content:
+                    content_parts.append(tokens[i].content)
                 i += 1
             heading_text = " ".join(content_parts).strip()
             line_start = token.map[0] if token.map else 0

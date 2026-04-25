@@ -27,7 +27,7 @@ class SmallToBigRetriever(BaseRetriever):
         super().__init__(cfg, project_root, chunking_strategy)
         self.embed_client = EmbeddingClient(
             model=cfg.embedding.model, dimensions=cfg.embedding.dimensions,
-            cache_dir=str(project_root / ".cache"))
+            cache_dir=str(project_root / cfg.paths.cache))
         self.collection = None
         self.parent_map = {}  # chunk_id -> parent content
 
@@ -52,7 +52,7 @@ class SmallToBigRetriever(BaseRetriever):
     def _build_parent_map(self, chunks):
         """Create parent context for each chunk by grouping adjacent chunks."""
         from src.utils.tokenizer import count_tokens
-        chunks_sorted = sorted(chunks, key=lambda c: (c.book_index, c.char_start))
+        chunks_sorted = sorted(chunks, key=lambda c: c.char_start)
         for i, chunk in enumerate(chunks_sorted):
             parent_parts = []
             parent_tokens = 0

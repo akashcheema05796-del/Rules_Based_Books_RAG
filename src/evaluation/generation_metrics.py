@@ -1,45 +1,81 @@
 """
-Generation metrics via RAGAS (spec §8.2).
+Generation metrics (spec §8.2).
 
-Faithfulness, Answer Correctness, Context Precision.
-Judge = claude-sonnet-4-5, temperature=0, 3 trials.
+RAGAS-style faithfulness, answer correctness, context precision. Judge uses a
+calibrated 5-point rubric mapped to [0, 1] with anchors for each level, plus a
+brief CoT step to stabilize scores at temperature=0. Trials are only useful
+when the upstream pipeline is stochastic (HyDE, decomposition) or when the
+judge itself is probed at temperature > 0.
 """
 
 import logging
-from typing import Optional
+import re
+
+import numpy as np
 
 from src.corpus.models import GoldEntry, RetrievedChunk
 from src.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
-FAITHFULNESS_PROMPT = """Given the context and the answer, evaluate whether the answer
-is faithful to (grounded in) the provided context. Score from 0.0 to 1.0.
+FAITHFULNESS_PROMPT = """You are a precise evaluation judge. Score how faithfully the
+generated ANSWER is grounded in the provided CONTEXT. Grounded = every factual claim
+in the answer is directly supported by the context.
 
-Context:
+CONTEXT:
+---
 {context}
+---
 
-Answer:
+ANSWER:
 {answer}
 
-Return ONLY a number between 0.0 and 1.0."""
+Rubric (choose one):
+  1.0 — every claim in the answer is directly supported by the context
+  0.75 — all major claims supported; minor unsupported detail
+  0.5 — mix of supported and unsupported claims
+  0.25 — most claims contradicted by or absent from context
+  0.0 — answer fabricates facts / contradicts context
 
-CORRECTNESS_PROMPT = """Compare the generated answer with the reference answer.
-Score from 0.0 to 1.0 based on correctness.
+Respond in two lines, exactly:
+REASON: <one short sentence>
+SCORE: <number in {{0.0, 0.25, 0.5, 0.75, 1.0}}>"""
 
-Reference answer: {reference}
-Generated answer: {answer}
+CORRECTNESS_PROMPT = """You are a precise evaluation judge. Compare the GENERATED answer
+to the REFERENCE answer. Semantic equivalence counts — wording need not match exactly.
 
-Return ONLY a number between 0.0 and 1.0."""
+REFERENCE answer: {reference}
+GENERATED answer: {answer}
 
-PRECISION_PROMPT = """Evaluate what fraction of the retrieved contexts are actually
-relevant to answering the question. Score from 0.0 to 1.0.
+Rubric (choose one):
+  1.0 — semantically equivalent; all key facts correct
+  0.75 — mostly correct; minor wording or precision issue
+  0.5 — partially correct; some key facts missing or wrong
+  0.25 — mostly incorrect; a single detail salvageable
+  0.0 — wrong, unrelated, or "I don't know" when reference is known
 
-Question: {query}
-Retrieved contexts:
+Respond in two lines, exactly:
+REASON: <one short sentence>
+SCORE: <number in {{0.0, 0.25, 0.5, 0.75, 1.0}}>"""
+
+PRECISION_PROMPT = """You are a precise evaluation judge. For each retrieved context
+below, decide if it is relevant to answering the QUESTION. Report the fraction that
+are relevant as a score.
+
+QUESTION: {query}
+
+RETRIEVED CONTEXTS:
 {contexts}
 
-Return ONLY a number between 0.0 and 1.0."""
+Rubric:
+  fraction_relevant = (# contexts directly useful for answering) / (# contexts shown)
+  Round to the nearest of {{0.0, 0.25, 0.5, 0.75, 1.0}}.
+
+Respond in two lines, exactly:
+REASON: <one short sentence>
+SCORE: <number in {{0.0, 0.25, 0.5, 0.75, 1.0}}>"""
+
+_SCORE_RE = re.compile(r"SCORE\s*:\s*([0-9.]+)", re.IGNORECASE)
 
 
 def compute_generation_metrics(
@@ -48,72 +84,56 @@ def compute_generation_metrics(
     retrieved: list[RetrievedChunk],
     gold: GoldEntry,
     llm: LLMClient,
-    n_trials: int = 3,
+    n_trials: int = 1,
 ) -> dict:
-    """Compute RAGAS-style generation metrics.
+    """Compute RAGAS-style metrics. Caller chooses `n_trials`; only > 1 if the
+    judge is stochastic (temperature > 0) or the pipeline feeding `answer` is."""
+    context_text = "\n---\n".join(c.content for c in retrieved[:5])
+    contexts_list = "\n---\n".join(
+        f"[{i+1}] {c.content[:500]}" for i, c in enumerate(retrieved[:5])
+    )
 
-    Args:
-        query: The input query.
-        answer: Generated answer.
-        retrieved: Retrieved chunks used for generation.
-        gold: Gold standard entry.
-        llm: LLM client for judging.
-        n_trials: Number of trials for variance estimation.
-
-    Returns:
-        Dict with faithfulness, answer_correctness, context_precision
-        (mean and std over trials).
-    """
-    context_text = "\n---\n".join([c.content for c in retrieved[:5]])
-    contexts_list = "\n---\n".join([f"[{i+1}] {c.content[:500]}" for i, c in enumerate(retrieved[:5])])
-
-    metrics = {"faithfulness": [], "answer_correctness": [], "context_precision": []}
+    buckets = {"faithfulness": [], "answer_correctness": [], "context_precision": []}
 
     for trial in range(n_trials):
-        # Faithfulness
-        try:
-            score = _judge_score(llm, FAITHFULNESS_PROMPT.format(
-                context=context_text, answer=answer),
-                cache_key=f"faith:{gold.id}:{trial}")
-            metrics["faithfulness"].append(score)
-        except Exception:
-            metrics["faithfulness"].append(0.0)
+        buckets["faithfulness"].append(_judge_score(
+            llm, FAITHFULNESS_PROMPT.format(context=context_text, answer=answer),
+            cache_key=f"faith:{gold.id}:{trial}"))
+        buckets["answer_correctness"].append(_judge_score(
+            llm, CORRECTNESS_PROMPT.format(reference=gold.reference_answer, answer=answer),
+            cache_key=f"correct:{gold.id}:{trial}"))
+        buckets["context_precision"].append(_judge_score(
+            llm, PRECISION_PROMPT.format(query=query, contexts=contexts_list),
+            cache_key=f"prec:{gold.id}:{trial}"))
 
-        # Answer correctness
-        try:
-            score = _judge_score(llm, CORRECTNESS_PROMPT.format(
-                reference=gold.reference_answer, answer=answer),
-                cache_key=f"correct:{gold.id}:{trial}")
-            metrics["answer_correctness"].append(score)
-        except Exception:
-            metrics["answer_correctness"].append(0.0)
-
-        # Context precision
-        try:
-            score = _judge_score(llm, PRECISION_PROMPT.format(
-                query=query, contexts=contexts_list),
-                cache_key=f"prec:{gold.id}:{trial}")
-            metrics["context_precision"].append(score)
-        except Exception:
-            metrics["context_precision"].append(0.0)
-
-    # Compute mean and std
-    import numpy as np
     result = {}
-    for key in metrics:
-        vals = metrics[key]
+    for key, vals in buckets.items():
         result[f"{key}_mean"] = float(np.mean(vals))
         result[f"{key}_std"] = float(np.std(vals))
-
     return result
 
 
-def _judge_score(llm, prompt, cache_key=None):
-    """Get a numeric score from the LLM judge."""
-    resp = llm.generate("You are a precise evaluation judge. Return only a number.",
-                         prompt, max_tokens=10, cache_key=cache_key)
+def _judge_score(llm: LLMClient, prompt: str, cache_key: str | None = None) -> float:
+    """Parse a rubric-scored reply. Falls back to first float if format slips."""
     try:
-        score = float(resp.strip())
-        return max(0.0, min(1.0, score))
-    except ValueError:
+        resp = llm.generate(
+            "You are a precise evaluation judge. Follow the output format exactly.",
+            prompt, max_tokens=80, cache_key=cache_key,
+        )
+    except Exception as e:
+        logger.warning(f"judge call failed: {e}")
         return 0.0
+
+    m = _SCORE_RE.search(resp)
+    if m:
+        try:
+            return max(0.0, min(1.0, float(m.group(1))))
+        except ValueError:
+            pass
+    m = re.search(r"([0-9]*\.?[0-9]+)", resp)
+    if m:
+        try:
+            return max(0.0, min(1.0, float(m.group(1))))
+        except ValueError:
+            pass
+    return 0.0

@@ -14,8 +14,8 @@ class ChunkMetadata(BaseModel):
     chunk_id: str = ""
     strategy: str
     content: str
-    book_title: str
-    book_index: int = Field(ge=0, le=25)
+    book_title: str = "corpus"
+    book_index: int = Field(default=0, ge=0)
     chapter_path: list[str] = Field(default_factory=list)
     char_start: int = 0
     char_end: int = 0

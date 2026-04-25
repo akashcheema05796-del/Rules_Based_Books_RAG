@@ -14,6 +14,7 @@ Usage:
     python main.py stage=report
 """
 
+import json
 import os
 import sys
 import logging
@@ -21,10 +22,11 @@ from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables — find_dotenv() walks up from cwd so the .env
+# in the project root is found even when running from a git worktree.
+load_dotenv(find_dotenv(usecwd=True), override=True)
 
 # Project root
 PROJECT_ROOT = Path(__file__).parent
@@ -73,9 +75,9 @@ def run_profile(cfg: DictConfig) -> None:
 
 
 def run_parse(cfg: DictConfig) -> None:
-    """§4.2-4.3: AST parsing + book boundary detection."""
+    """§4.3: AST parsing — corpus treated as one unit."""
+    import json as _json
     from src.corpus.parser import parse_corpus
-    from src.corpus.book_detector import detect_books
     from src.utils.seeds import set_all_seeds
 
     set_all_seeds(cfg.seed)
@@ -87,27 +89,32 @@ def run_parse(cfg: DictConfig) -> None:
     ast_nodes = parse_corpus(raw_path)
     logger.info(f"Parsed {len(ast_nodes)} top-level AST nodes")
 
-    logger.info("Detecting book boundaries...")
-    manifest_path = PROJECT_ROOT / cfg.corpus.books_manifest
-    books = detect_books(ast_nodes, raw_path, manifest_path, interim_path)
-    logger.info(f"Detected {len(books)} books")
+    # Save a lightweight parse summary (not the full AST — that's ~GB on disk).
+    node_type_counts: dict[str, int] = {}
+    for n in ast_nodes:
+        node_type_counts[n.node_type] = node_type_counts.get(n.node_type, 0) + 1
+
+    summary = {
+        "total_nodes": len(ast_nodes),
+        "node_types": node_type_counts,
+        "corpus_chars": (PROJECT_ROOT / cfg.paths.raw_corpus).stat().st_size,
+    }
+    summary_path = interim_path / "parse_summary.json"
+    summary_path.write_text(_json.dumps(summary, indent=2), encoding="utf-8")
+    logger.info(f"Parse summary saved to {summary_path}")
 
 
 def run_chunk(cfg: DictConfig, chunking_strategies: list[str]) -> None:
-    """§5: Run chunking strategies."""
+    """§5: Run chunking strategies — full corpus as one unit."""
     from src.corpus.parser import parse_corpus
-    from src.corpus.book_detector import detect_books
     from src.chunkers import get_chunker
     from src.utils.seeds import set_all_seeds
 
     set_all_seeds(cfg.seed)
     raw_path = PROJECT_ROOT / cfg.paths.raw_corpus
-    interim_path = PROJECT_ROOT / cfg.paths.interim
-    manifest_path = PROJECT_ROOT / cfg.corpus.books_manifest
 
     logger.info("Loading parsed corpus...")
     ast_nodes = parse_corpus(raw_path)
-    books = detect_books(ast_nodes, raw_path, manifest_path, interim_path)
 
     for strategy_name in chunking_strategies:
         logger.info(f"Chunking with strategy: {strategy_name}")
@@ -115,7 +122,7 @@ def run_chunk(cfg: DictConfig, chunking_strategies: list[str]) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         chunker = get_chunker(strategy_name, cfg, PROJECT_ROOT)
-        all_chunks = chunker.chunk_corpus(books, ast_nodes)
+        all_chunks = chunker.chunk_corpus(ast_nodes)
 
         # Write chunks to JSONL
         import json
@@ -204,6 +211,32 @@ def run_goldset(cfg: DictConfig) -> None:
     logger.info(f"Gold standard saved to {gold_path}")
 
 
+def run_validate_gold(cfg: DictConfig) -> None:
+    """§7.3: Emit review sheet OR ingest reviewer decisions.
+
+    Controlled by `cfg.validate.action`: 'emit' (default) or 'ingest'.
+    """
+    from src.goldset.validator import emit_review_sheet, ingest_reviews, validate_gold_standard
+
+    gold_dir = PROJECT_ROOT / cfg.paths.gold
+    gold_path = gold_dir / "gold_standard.jsonl"
+    corpus_path = PROJECT_ROOT / cfg.paths.raw_corpus
+    action = cfg.get("validate", {}).get("action", "static")
+
+    if action == "emit":
+        out_csv = gold_dir / "review_sheet.csv"
+        emit_review_sheet(gold_path, out_csv, corpus_path)
+        logger.info(f"Review sheet emitted: {out_csv}")
+    elif action == "ingest":
+        reviews_csv = gold_dir / "review_sheet.csv"
+        frozen = gold_dir / "gold_standard.frozen.jsonl"
+        report = ingest_reviews(reviews_csv, gold_path, frozen)
+        logger.info(f"Review ingest report: {json.dumps(report, indent=2)}")
+    else:
+        report = validate_gold_standard(gold_path, corpus_path)
+        logger.info(f"Static validation: {json.dumps(report, indent=2)}")
+
+
 def run_report(cfg: DictConfig) -> None:
     """§9: Generate report with stats, plots, and writeup."""
     from src.evaluation.report import generate_report
@@ -226,7 +259,7 @@ def main(cfg: DictConfig) -> None:
     stage = cfg.get("stage", None)
     if stage is None:
         logger.error("No stage specified. Use: python main.py stage=<stage>")
-        logger.error("Stages: profile, parse, goldset, chunk, index, eval_phase1, eval_phase2, eval_phase3, report")
+        logger.error("Stages: profile, parse, goldset, validate_gold, chunk, index, eval_phase1, eval_phase2, eval_phase3, report")
         sys.exit(1)
 
     # Resolve strategy lists
@@ -248,6 +281,7 @@ def main(cfg: DictConfig) -> None:
         "eval_phase1": lambda: run_eval_phase1(cfg, chunking_strategies),
         "eval_phase2": lambda: run_eval_phase2(cfg, chunking_strategies, retrieval_methods),
         "eval_phase3": lambda: run_eval_phase3(cfg),
+        "validate_gold": lambda: run_validate_gold(cfg),
         "report": lambda: run_report(cfg),
     }
 

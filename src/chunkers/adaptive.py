@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 from src.chunkers import BaseChunker
 from src.corpus.models import ASTNode, BookSpan, ChunkMetadata
-from src.corpus.book_detector import get_chapter_path
+from src.corpus.book_detector import get_chapter_path, build_heading_index
 from src.utils.tokenizer import count_tokens
 from src.utils.embeddings import EmbeddingClient
 
@@ -42,7 +42,7 @@ class AdaptiveChunker(BaseChunker):
             model=cfg.embedding.model,
             dimensions=cfg.embedding.dimensions,
             batch_size=cfg.embedding.batch_size,
-            cache_dir=str(project_root / ".cache"),
+            cache_dir=str(project_root / cfg.paths.cache),
         )
 
     def chunk_book(self, book, nodes, full_text):
@@ -61,6 +61,9 @@ class AdaptiveChunker(BaseChunker):
         # Merge adjacent sentences based on cosine similarity
         merged_chunks = self._merge_sentences(sentences, embeddings)
 
+        # Pre-build heading index once for this chunk_book call.
+        heading_index = getattr(self, "_heading_index", None) or build_heading_index(nodes)
+
         # Build chunk metadata with micro-headers
         chunks = []
         search_pos = 0
@@ -76,7 +79,7 @@ class AdaptiveChunker(BaseChunker):
             search_pos = max(pos + 1, search_pos)
 
             # Build micro-header
-            chapter_path = get_chapter_path(nodes, char_start)
+            chapter_path = get_chapter_path(nodes, char_start, _heading_index=heading_index)
             micro_header = f"[{book.book_title} › {' › '.join(chapter_path)}]"
 
             # Prepend micro-header

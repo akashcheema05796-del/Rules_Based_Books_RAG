@@ -4,6 +4,7 @@ Markdown Hierarchical Chunking (spec §5.2).
 Split on h2/h3/h4 headers. Oversized chunks (>2000 tokens) post-split with recursive.
 """
 
+import bisect
 import logging
 from pathlib import Path
 
@@ -72,36 +73,40 @@ class MarkdownHierarchicalChunker(BaseChunker):
         return chunks
 
     def _split_by_headers(self, nodes, full_text, book):
-        """Split book content into sections at h2/h3/h4 boundaries."""
+        """Split book content into sections at h2/h3/h4 boundaries.
+
+        Uses binary search to avoid O(sections × nodes) scan.
+        """
         # Find header positions
-        header_positions = []
-        for node in nodes:
-            if (node.node_type == "heading" and
-                    node.level in (2, 3, 4) and
-                    book.start_offset <= node.char_start < book.end_offset):
-                header_positions.append(node.char_start)
+        header_positions = sorted(
+            node.char_start for node in nodes
+            if (node.node_type == "heading" and node.level in (2, 3, 4)
+                and book.start_offset <= node.char_start < book.end_offset)
+        )
 
         if not header_positions:
-            # No headers found — return whole book as one section
             text = full_text[book.start_offset:book.end_offset]
             return [(text, book.start_offset, nodes)]
 
-        # Sort positions
-        header_positions.sort()
+        # Pre-sort nodes by char_start for binary-search slicing.
+        sorted_nodes = sorted(nodes, key=lambda n: n.char_start)
+        node_starts = [n.char_start for n in sorted_nodes]
 
-        # Include content before first header
+        def nodes_in_range(lo, hi):
+            l = bisect.bisect_left(node_starts, lo)
+            r = bisect.bisect_left(node_starts, hi)
+            return sorted_nodes[l:r]
+
         sections = []
         if header_positions[0] > book.start_offset:
             pre_text = full_text[book.start_offset:header_positions[0]]
             if pre_text.strip():
                 sections.append((pre_text, book.start_offset, []))
 
-        # Split at each header
         for i, pos in enumerate(header_positions):
             end = header_positions[i + 1] if i + 1 < len(header_positions) else book.end_offset
             section_text = full_text[pos:end]
-            section_nodes = [n for n in nodes if pos <= n.char_start < end]
             if section_text.strip():
-                sections.append((section_text, pos, section_nodes))
+                sections.append((section_text, pos, nodes_in_range(pos, end)))
 
         return sections

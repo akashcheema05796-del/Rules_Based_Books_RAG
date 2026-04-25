@@ -39,8 +39,8 @@ reranker:
 
 # --- LLM (Judge & Generator) ---
 llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-5-20241022"
+  provider: "openai"
+  model: "gpt-4o"
   temperature: 0
   seed: 42
   max_tokens: 4096
@@ -56,14 +56,21 @@ retrieval:
 
 # --- Evaluation ---
 evaluation:
-  n_trials: 3
+  n_trials: 3                       # trials for stochastic pipelines / judge (temp>0)
   bootstrap_resamples: 10000
   bootstrap_ci: 0.95
-  span_overlap_threshold: 0.5  # >= 50% intersection of shorter span
-  ragas_judge: "claude-sonnet-4-5-20241022"
+  span_overlap_threshold: 0.5       # >= 50% intersection of shorter span
+  ragas_judge: "gpt-4o"
+  compute_generation_metrics: true  # toggle answer-gen + judge (set false for dry runs)
+  kappa_threshold: 0.7              # inter-rater agreement floor (spec §7.3)
+
+# --- Gold-set validation ---
+validate:
+  action: "static"                  # one of: static, emit, ingest
 
 # --- Cost Budget (USD) ---
 cost_budget:
+  goldset: 10.0
   phase1: 10.0
   phase2: 50.0
   phase3: 20.0
@@ -81,7 +88,7 @@ paths:
   results: "results"
   figures: "results/figures"
   chunk_samples: "results/chunk_samples"
-  cache: ".cache"
+  cache: "data/.cache"          # lives in data/ alongside indices — survives worktree cleanup
   log_file: "process.log"
 
 # --- Rate Limiting ---
@@ -91,5 +98,4 @@ rate_limit:
   max_retries: 6
 
 # --- Corpus ---
-corpus:
-  books_manifest: "configs/books_manifest.yaml"
+# (book detection removed — corpus treated as one unit)

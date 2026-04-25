@@ -28,7 +28,7 @@ class DenseRetriever(BaseRetriever):
         self.embed_client = EmbeddingClient(
             model=cfg.embedding.model,
             dimensions=cfg.embedding.dimensions,
-            cache_dir=str(project_root / ".cache"),
+            cache_dir=str(project_root / cfg.paths.cache),
         )
 
     def load_index(self):
