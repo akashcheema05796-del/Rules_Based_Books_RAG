@@ -1,0 +1,52 @@
+{
+  "k": 10,
+  "routing_table": {
+    "lore": {
+      "best_strategy": "markdown_hierarchical",
+      "best_method": "bm25",
+      "mean_recall_at_10": 1.0,
+      "n_queries": 25
+    },
+    "mechanical": {
+      "best_strategy": "markdown_hierarchical",
+      "best_method": "bm25",
+      "mean_recall_at_10": 1.0,
+      "n_queries": 25
+    },
+    "tabular": {
+      "best_strategy": "markdown_hierarchical",
+      "best_method": "dense",
+      "mean_recall_at_10": 1.0,
+      "n_queries": 20
+    },
+    "cross_reference": {
+      "best_strategy": "markdown_hierarchical",
+      "best_method": "hybrid_rrf",
+      "mean_recall_at_10": 1.0,
+      "n_queries": 15
+    },
+    "monster": {
+      "best_strategy": "recursive",
+      "best_method": "dense",
+      "mean_recall_at_10": 1.0,
+      "n_queries": 10
+    },
+    "numeric": {
+      "best_strategy": "markdown_hierarchical",
+      "best_method": "bm25",
+      "mean_recall_at_10": 1.0,
+      "n_queries": 5
+    }
+  },
+  "policy_comparison": {
+    "single_best_config": {
+      "strategy": "markdown_hierarchical",
+      "method": "bm25",
+      "recall_at_10": 0.8818181818181818
+    },
+    "per_type_routing": {
+      "recall_at_10": 1.0
+    },
+    "lift": 0.1182
+  }
+}

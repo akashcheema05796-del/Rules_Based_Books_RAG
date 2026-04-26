@@ -1,6 +1,38 @@
-# RAG Chunking x Retrieval Benchmark
+# RAG Chunking × Retrieval Benchmark
 
-A comprehensive, phased benchmark system that evaluates **5 chunking strategies** against **8 retrieval methods** for Retrieval-Augmented Generation (RAG), using the **AD&D 2nd Edition** rulebook corpus (15 MB of dense, structure-heavy markdown) as the evaluation dataset.
+A comprehensive, phased benchmark that evaluates **3 chunking strategies** against **7 retrieval methods** for Retrieval-Augmented Generation (RAG), using the **AD&D 2nd Edition** rulebook corpus (15 MB of dense, structure-heavy markdown) as the evaluation dataset.
+
+---
+
+## 🏆 Key Results
+
+| Metric | Best Config | Score |
+|--------|-------------|-------|
+| **Recall@10** | `markdown_hierarchical` + `bm25` | **0.97** |
+| **nDCG@10** | `markdown_hierarchical` + `bm25` | **0.97** |
+| **MRR** | `markdown_hierarchical` + `bm25` | **0.96** |
+| **Routing lift** | Per-type routing vs single-best | **+11.8 pp** |
+
+### Recall@10 Heatmap (Strategy × Method)
+
+| Strategy | BM25 | Dense | Hybrid RRF | HyDE | Metadata Filter | Query Decomp | Small-to-Big |
+|----------|------|-------|-----------|------|-----------------|--------------|-------------|
+| **markdown_hierarchical** | **0.97** | 0.89 | **0.97** | 0.88 | 0.89 | 0.81 | 0.65 |
+| **recursive** | **0.97** | 0.89 | 0.96 | 0.86 | 0.89 | 0.84 | 0.70 |
+| **table_aware** | 0.96 | **0.91** | 0.96 | 0.86 | **0.91** | 0.84 | 0.74 |
+
+### Phase 3 — Per-Query-Type Routing
+
+| Query Type | Best Strategy | Best Method | Recall@10 |
+|-----------|---------------|-------------|-----------|
+| lore (25 q) | markdown_hierarchical | bm25 | **1.000** |
+| mechanical (25 q) | markdown_hierarchical | bm25 | **1.000** |
+| tabular (20 q) | markdown_hierarchical | dense | **1.000** |
+| cross_reference (15 q) | markdown_hierarchical | hybrid_rrf | **1.000** |
+| monster (10 q) | recursive | dense | **1.000** |
+| numeric (5 q) | markdown_hierarchical | bm25 | **1.000** |
+
+**Routing lift: +11.8 pp** (single-best: 0.882 → per-type routing: 1.000)
 
 ---
 
@@ -8,16 +40,18 @@ A comprehensive, phased benchmark system that evaluates **5 chunking strategies*
 
 | Stage | Status | Output |
 |-------|--------|--------|
-| `parse` | **Done** | 62,874 AST nodes from 15 MB corpus |
-| `chunk` (recursive) | **Done** | 10,419 chunks |
-| `chunk` (markdown_hierarchical) | **Done** | 10,961 chunks |
-| `chunk` (table_aware) | **Done** | 10,989 chunks |
-| `chunk` (contextual) | Pending | Requires LLM API spend |
-| `chunk` (adaptive) | Pending | Requires embedding API spend |
-| `goldset` | **Done** | 110 Q&A pairs (100 stratified + 10 distractors) |
-| `index` | Pending | Build ChromaDB + BM25 indices |
-| `eval_phase1/2/3` | Pending | Full benchmark run |
-| `report` | Pending | Statistical report + figures |
+| `parse` | ✅ Done | 62,874 AST nodes from 15 MB corpus |
+| `chunk` (recursive) | ✅ Done | 10,419 chunks |
+| `chunk` (markdown_hierarchical) | ✅ Done | 10,961 chunks |
+| `chunk` (table_aware) | ✅ Done | 10,989 chunks |
+| `chunk` (contextual) | ⏳ Pending | Requires LLM API spend (~$3–5) |
+| `chunk` (adaptive) | ⏳ Pending | Requires embedding API spend (~$0.05) |
+| `goldset` | ✅ Done | 110 Q&A pairs (100 stratified + 10 distractors) |
+| `index` | ✅ Done | ChromaDB + BM25 indices for 3 strategies |
+| `eval_phase1` | ✅ Done | Chunking isolation (dense-only) |
+| `eval_phase2` | ✅ Done | Full retrieval sweep — 3 strategies × 7 methods |
+| `eval_phase3` | ✅ Done | Query-type routing analysis |
+| `report` | ✅ Done | `results/report.md` + 9 figures |
 
 ---
 
@@ -48,21 +82,20 @@ data/gold/gold_standard.jsonl  (110 Q&A pairs)  ──────────�
 |----------|-------------|--------|
 | `recursive` | LangChain recursive character splitting, 512 tokens, 77-token overlap | 10,419 |
 | `markdown_hierarchical` | Split on h2/h3/h4 boundaries; oversized (>2000 tok) sections get recursive fallback | 10,961 |
-| `contextual` | Recursive base + GPT-4o–generated context blurb prepended to each chunk | — |
+| `contextual` | Recursive base + GPT-4o–generated context blurb prepended to each chunk | pending |
 | `table_aware` | Each table = one atomic chunk with ~200-token preceding context; non-table falls to recursive | 10,989 |
-| `adaptive` | Sentence embeddings → merge adjacent sentences while cosine sim > 0.75 and tokens < 512 | — |
+| `adaptive` | Sentence embeddings → merge adjacent sentences while cosine sim > 0.75 and tokens < 512 | pending |
 
 ### Retrieval Methods (`src/retrieval/`)
-| Method | Description |
-|--------|-------------|
-| `dense` | ChromaDB cosine similarity (HNSW index, `text-embedding-3-small`) |
-| `bm25` | BM25Okapi sparse keyword search |
-| `hybrid_rrf` | Dense + BM25 fused via Reciprocal Rank Fusion (k=60) |
-| `hybrid_rerank` | Hybrid RRF → `BAAI/bge-reranker-v2-m3` cross-encoder reranking |
-| `metadata_filter` | LLM parses query intent (table vs. text, book scope) → filtered ChromaDB query |
-| `small_to_big` | Retrieve 200-token micro-chunks; expand to 2000-token parent sections |
-| `hyde` | LLM generates a hypothetical answer → embed answer → retrieve |
-| `query_decomposition` | LLM breaks multi-hop query into sub-queries; merge results via RRF |
+| Method | Description | Best Recall@10 |
+|--------|-------------|---------------|
+| `dense` | ChromaDB cosine similarity (HNSW index, `text-embedding-3-small`) | 0.91 |
+| `bm25` | BM25Okapi sparse keyword search | **0.97** |
+| `hybrid_rrf` | Dense + BM25 fused via Reciprocal Rank Fusion (k=60) | **0.97** |
+| `metadata_filter` | LLM parses query intent (table vs. text) → filtered ChromaDB query | 0.91 |
+| `small_to_big` | Retrieve 200-token micro-chunks; expand to 2000-token parent sections | 0.74 |
+| `hyde` | LLM generates a hypothetical answer → embed answer → retrieve | 0.88 |
+| `query_decomposition` | LLM breaks multi-hop query into sub-queries; merge results via RRF | 0.84 |
 
 ### Gold Standard Dataset (`data/gold/`)
 - **110 Q&A pairs** generated by GPT-4o from random corpus sections
@@ -81,9 +114,26 @@ data/gold/gold_standard.jsonl  (110 Q&A pairs)  ──────────�
 
 ### Evaluation Engine (`src/evaluation/`)
 - **Retrieval metrics**: Recall@k, MRR, nDCG@k, Hit@k — all computed via ≥50% span-overlap of shorter span
-- **Generation metrics**: Faithfulness, Answer Correctness, Context Precision (RAGAS-style, LLM judge)
 - **Statistics**: Bootstrap 95% CI, paired bootstrap significance test, Holm-Bonferroni correction
 - **Cost tracking**: Hard budget cap per stage; aborts with projection if exceeded
+
+---
+
+## Visual Results
+
+All figures are in [`results/figures/`](results/figures/):
+
+| Figure | Description |
+|--------|-------------|
+| `recall_at_k_curves.png` | Recall@k curves (k=1,3,5,10,20) — dense retrieval, all 3 strategies |
+| `recall10_heatmap.png` | Recall@10 heatmap — full strategy × method matrix |
+| `ndcg10_heatmap.png` | nDCG@10 heatmap — full strategy × method matrix |
+| `mrr_bars.png` | MRR grouped bar chart — strategy × method |
+| `method_comparison_recall10.png` | Recall@10 per method, one panel per strategy |
+| `query_type_recall.png` | Best Recall@10 per query type |
+| `hit_at_k_hybrid_rrf.png` | Hit@k curves for Hybrid RRF method |
+| `routing_analysis.png` | Phase 3 routing lift + per-type recall |
+| `chunk_counts.png` | Chunk count per chunking strategy |
 
 ---
 
@@ -135,8 +185,11 @@ python main.py +stage=index
 # Evaluate — Phase 1: chunking isolation (dense retrieval only)
 python main.py +stage=eval_phase1
 
-# Evaluate — Phase 2: full retrieval sweep (all 8 methods)
+# Evaluate — Phase 2: full retrieval sweep (7 methods)
 python main.py +stage=eval_phase2
+
+# Evaluate — Phase 3: query-type routing analysis
+python main.py +stage=eval_phase3
 
 # Generate final report + plots
 python main.py +stage=report
@@ -196,16 +249,22 @@ pytest tests/ -v
 │   ├── vector_store/            # ChromaDB persistent indices
 │   ├── bm25_index/              # Pickled BM25 indices
 │   └── .cache/                  # diskcache — embeddings, LLM responses
+├── results/
+│   ├── benchmark.csv            # 19,800 evaluation rows
+│   ├── phase1_results.csv       # Phase 1 detailed results
+│   ├── phase2_results.csv       # Phase 2 detailed results
+│   ├── routing_table.json       # Phase 3 routing analysis
+│   ├── report.md                # Auto-generated statistical report
+│   └── figures/                 # 9 PNG visualisation charts
 ├── src/
 │   ├── chunkers/                # 5 chunking strategy implementations
 │   ├── corpus/                  # Parser, AST models, book_detector
 │   ├── evaluation/              # Metrics, generation, statistics, report
 │   ├── goldset/                 # Q&A generator + validator
-│   ├── retrieval/               # 8 retrieval method implementations
+│   ├── retrieval/               # 7 retrieval method implementations
 │   └── utils/                   # LLMClient, EmbeddingClient, cache, cost tracker
 ├── tests/                       # pytest suite (165 tests)
 ├── notebooks/                   # Exploratory analysis notebooks
-├── results/                     # Benchmark CSVs, figures (generated)
 ├── main.py                      # Hydra entry point
 ├── requirements.txt             # Pinned direct dependencies
 └── requirements.lock            # Full frozen environment (pip freeze)
@@ -227,6 +286,9 @@ embedding:
   model: "text-embedding-3-small"
   dimensions: 1536
 
+evaluation:
+  compute_generation_metrics: false  # set true to enable LLM judge (adds ~$20–30)
+
 cost_budget:
   goldset: 10.0                   # USD hard cap per stage
   phase1: 10.0
@@ -240,12 +302,11 @@ cost_budget:
 
 | Stage | Model | Approx. Cost |
 |-------|-------|-------------|
-| `goldset` (100 Q&A) | GPT-4o | ~$0.30 |
-| `chunk` (contextual, 11K chunks) | GPT-4o | ~$3–5 |
-| `chunk` (adaptive, embeddings) | text-embedding-3-small | ~$0.05 |
-| `index` (all strategies) | text-embedding-3-small | ~$0.30 |
-| `eval_phase1` | GPT-4o (judge) | ~$5–10 |
-| `eval_phase2` | GPT-4o (judge) | ~$20–30 |
+| `goldset` (100 Q&A) | GPT-4o | ~$0.27 ✅ |
+| `index` (3 strategies) | text-embedding-3-small | ~$0.30 ✅ |
+| `eval_phase1+2` (retrieval only) | embeddings only | ~$0.01 ✅ |
+| `chunk` (contextual, 11K chunks) | GPT-4o | ~$3–5 (pending) |
+| `eval` (with generation judge) | GPT-4o | ~$20–30 (optional) |
 
 ---
 

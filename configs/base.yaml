@@ -34,8 +34,8 @@ fusion:
 reranker:
   model: "BAAI/bge-reranker-v2-m3"
   use_fp16: true
-  top_n_input: 50  # retrieve this many before reranking
-  batch_size: 32
+  top_n_input: 10  # retrieve this many before reranking (CPU-friendly)
+  batch_size: 10  # keep CPU inference fast
 
 # --- LLM (Judge & Generator) ---
 llm:
@@ -61,7 +61,7 @@ evaluation:
   bootstrap_ci: 0.95
   span_overlap_threshold: 0.5       # >= 50% intersection of shorter span
   ragas_judge: "gpt-4o"
-  compute_generation_metrics: true  # toggle answer-gen + judge (set false for dry runs)
+  compute_generation_metrics: false  # disabled — retrieval metrics only (avoids ~$40 LLM spend + 8h rate-limit wait)
   kappa_threshold: 0.7              # inter-rater agreement floor (spec §7.3)
 
 # --- Gold-set validation ---

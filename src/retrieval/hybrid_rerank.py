@@ -26,19 +26,32 @@ class HybridRerankRetriever(BaseRetriever):
         self.initial_top_n = cfg.reranker.top_n_input
         self.reranker = None
         self.reranker_model = cfg.reranker.model
+        self._reranker_backend = None
 
     def load_index(self):
         self.hybrid.load_index()
-        # Lazy load reranker
+        # Lazy load reranker — prefer sentence-transformers CrossEncoder (compatible with
+        # transformers 5.x); fall back to FlagEmbedding if available, then hybrid-only.
+        try:
+            from sentence_transformers import CrossEncoder
+            self.reranker = CrossEncoder(self.reranker_model)
+            self._reranker_backend = "sentence_transformers"
+            logger.info(f"Loaded reranker (CrossEncoder): {self.reranker_model}")
+            return
+        except Exception as st_err:
+            logger.debug(f"sentence_transformers CrossEncoder failed: {st_err}")
+
         try:
             from FlagEmbedding import FlagReranker
             self.reranker = FlagReranker(
                 self.reranker_model,
                 use_fp16=self.cfg.reranker.use_fp16,
             )
-            logger.info(f"Loaded reranker: {self.reranker_model}")
-        except ImportError:
-            logger.warning("FlagEmbedding not available, falling back to hybrid-only")
+            self._reranker_backend = "flag_embedding"
+            logger.info(f"Loaded reranker (FlagEmbedding): {self.reranker_model}")
+        except Exception:
+            logger.warning("No reranker backend available, falling back to hybrid-only")
+            self._reranker_backend = None
 
     def retrieve(self, query, k=10):
         # Stage 1-2: Hybrid retrieval with RRF
@@ -50,15 +63,20 @@ class HybridRerankRetriever(BaseRetriever):
         # Stage 3: Cross-encoder reranking
         pairs = [[query, c.content] for c in candidates]
 
-        # Batch scoring
+        # Batch scoring — API differs per backend
         batch_size = self.cfg.reranker.batch_size
         all_scores = []
-        for i in range(0, len(pairs), batch_size):
-            batch = pairs[i:i + batch_size]
-            scores = self.reranker.compute_score(batch)
-            if isinstance(scores, (int, float)):
-                scores = [scores]
-            all_scores.extend(scores)
+        if getattr(self, "_reranker_backend", None) == "sentence_transformers":
+            import numpy as np
+            raw = self.reranker.predict(pairs, batch_size=batch_size)
+            all_scores = [float(s) for s in np.atleast_1d(raw)]
+        else:
+            for i in range(0, len(pairs), batch_size):
+                batch = pairs[i:i + batch_size]
+                scores = self.reranker.compute_score(batch)
+                if isinstance(scores, (int, float)):
+                    scores = [scores]
+                all_scores.extend(scores)
 
         # Re-rank by reranker score
         scored = list(zip(candidates, all_scores))

@@ -54,3 +54,4 @@ pytest-asyncio>=0.21.0
 # ── Plotting ──────────────────────────────────────────────────────────────────
 matplotlib>=3.8.0              # Benchmark visualisations
 seaborn>=0.13.0                # Statistical plot styling
+tabulate>=0.9.0                # Markdown table output (pandas .to_markdown())

@@ -47,7 +47,8 @@ ALL_CHUNKING = ["recursive", "markdown_hierarchical", "contextual", "table_aware
 
 # All retrieval methods
 ALL_RETRIEVAL = [
-    "dense", "bm25", "hybrid_rrf", "hybrid_rerank",
+    "dense", "bm25", "hybrid_rrf",
+    # "hybrid_rerank" excluded — CPU cross-encoder inference is ~1 min/query (no GPU)
     "metadata_filter", "small_to_big", "hyde", "query_decomposition",
 ]
 
@@ -131,7 +132,7 @@ def run_chunk(cfg: DictConfig, chunking_strategies: list[str]) -> None:
             for chunk in all_chunks:
                 f.write(json.dumps(chunk.model_dump(), ensure_ascii=False) + "\n")
 
-        logger.info(f"  → {len(all_chunks)} chunks written to {output_file}")
+        logger.info(f"  -> {len(all_chunks)} chunks written to {output_file}")
 
         # Save chunk samples (50 random)
         import random
@@ -143,7 +144,7 @@ def run_chunk(cfg: DictConfig, chunking_strategies: list[str]) -> None:
             for chunk in sample_chunks:
                 f.write(json.dumps(chunk.model_dump(), ensure_ascii=False) + "\n")
 
-        logger.info(f"  → {len(sample_chunks)} samples saved to {sample_file}")
+        logger.info(f"  -> {len(sample_chunks)} samples saved to {sample_file}")
 
 
 def run_index(cfg: DictConfig, chunking_strategies: list[str]) -> None:
@@ -161,7 +162,7 @@ def run_index(cfg: DictConfig, chunking_strategies: list[str]) -> None:
             continue
 
         build_indices(strategy_name, chunks_path, cfg, PROJECT_ROOT)
-        logger.info(f"  → Indices built for {strategy_name}")
+        logger.info(f"  -> Indices built for {strategy_name}")
 
 
 def run_eval_phase1(cfg: DictConfig, chunking_strategies: list[str]) -> None:

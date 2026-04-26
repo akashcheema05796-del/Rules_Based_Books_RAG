@@ -24,12 +24,16 @@ logger = logging.getLogger(__name__)
 
 
 def _load_chunks(chunks_path: Path) -> list[ChunkMetadata]:
-    """Load chunks from JSONL file."""
+    """Load chunks from JSONL file, deduplicating by chunk_id."""
+    seen_ids: set[str] = set()
     chunks = []
     with open(chunks_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
-                chunks.append(ChunkMetadata(**json.loads(line)))
+                chunk = ChunkMetadata(**json.loads(line))
+                if chunk.chunk_id not in seen_ids:
+                    seen_ids.add(chunk.chunk_id)
+                    chunks.append(chunk)
     return chunks
 
 
@@ -45,6 +49,7 @@ def build_indices(
     chunks_path: Path,
     cfg: DictConfig,
     project_root: Path,
+    force: bool = False,
 ) -> None:
     """Build dense (ChromaDB) and sparse (BM25) indices.
 
@@ -53,7 +58,15 @@ def build_indices(
         chunks_path: Path to chunks.jsonl.
         cfg: Configuration.
         project_root: Project root.
+        force: Rebuild even if index already exists.
     """
+    dense_dir = project_root / cfg.paths.vector_store / strategy_name
+    bm25_path = project_root / cfg.paths.bm25_index / strategy_name / "bm25_index.pkl"
+
+    if not force and dense_dir.exists() and bm25_path.exists():
+        logger.info(f"Indices already exist for {strategy_name}, skipping. Pass force=True to rebuild.")
+        return
+
     chunks = _load_chunks(chunks_path)
     logger.info(f"Building indices for {strategy_name}: {len(chunks)} chunks")
 
@@ -66,16 +79,15 @@ def build_indices(
 
 def _build_dense_index(strategy_name, chunks, cfg, project_root):
     """Build ChromaDB dense index."""
+    import shutil
     persist_dir = project_root / cfg.paths.vector_store / strategy_name
+
+    # Fully wipe and recreate the directory so there are no leftover partial indices
+    if persist_dir.exists():
+        shutil.rmtree(persist_dir)
     persist_dir.mkdir(parents=True, exist_ok=True)
 
     client = chromadb.PersistentClient(path=str(persist_dir))
-
-    # Delete existing collection if it exists
-    try:
-        client.delete_collection(name=strategy_name)
-    except Exception:
-        pass
 
     collection = client.create_collection(
         name=strategy_name,
