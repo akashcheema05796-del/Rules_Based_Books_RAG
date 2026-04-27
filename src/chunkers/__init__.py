@@ -13,7 +13,7 @@ from typing import Optional
 from omegaconf import DictConfig
 
 from src.corpus.models import ASTNode, BookSpan, ChunkMetadata
-from src.corpus.book_detector import get_chapter_path, build_heading_index
+from src.corpus.book_detector import get_chapter_path
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +48,13 @@ class BaseChunker(ABC):
 
     def chunk_corpus(
         self,
+        books: list[BookSpan],
         all_nodes: list[ASTNode],
     ) -> list[ChunkMetadata]:
-        """Chunk the entire corpus as one unit.
+        """Chunk the entire corpus by iterating over books.
 
         Args:
+            books: List of book boundaries.
             all_nodes: All AST nodes from the corpus.
 
         Returns:
@@ -60,23 +62,22 @@ class BaseChunker(ABC):
         """
         full_text_path = self.project_root / self.cfg.paths.raw_corpus
         full_text = full_text_path.read_text(encoding="utf-8")
+        all_chunks = []
 
-        # Treat the whole corpus as one BookSpan
-        corpus_span = BookSpan(
-            book_title="corpus",
-            book_index=0,
-            start_offset=0,
-            end_offset=len(full_text),
-        )
+        for book in books:
+            # Filter nodes belonging to this book
+            book_nodes = [
+                n for n in all_nodes
+                if book.start_offset <= n.char_start < book.end_offset
+            ]
+            logger.info(f"  Chunking '{book.book_title}': {len(book_nodes)} nodes")
 
-        # Pre-build heading index once — avoids O(n) sort inside every
-        # _build_metadata call (critical for 60K+ node corpora).
-        self._heading_index = build_heading_index(all_nodes)
+            chunks = self.chunk_book(book, book_nodes, full_text)
+            all_chunks.extend(chunks)
+            logger.info(f"  → {len(chunks)} chunks")
 
-        logger.info(f"  Chunking full corpus ({len(full_text):,} chars) with {self.strategy_name}")
-        chunks = self.chunk_book(corpus_span, all_nodes, full_text)
-        logger.info(f"Total chunks ({self.strategy_name}): {len(chunks)}")
-        return chunks
+        logger.info(f"Total chunks ({self.strategy_name}): {len(all_chunks)}")
+        return all_chunks
 
     def _build_metadata(
         self,
@@ -90,9 +91,7 @@ class BaseChunker(ABC):
         """Build ChunkMetadata for a chunk."""
         from src.utils.tokenizer import count_tokens
 
-        # Use pre-built index if available (set by chunk_corpus); else build ad-hoc.
-        heading_index = getattr(self, "_heading_index", None)
-        chapter_path = get_chapter_path(all_nodes, char_start, _heading_index=heading_index)
+        chapter_path = get_chapter_path(all_nodes, char_start)
 
         return ChunkMetadata(
             strategy=self.strategy_name,
@@ -128,6 +127,7 @@ def get_chunker(strategy_name: str, cfg: DictConfig, project_root: Path) -> Base
     from src.chunkers.contextual import ContextualChunker
     from src.chunkers.table_aware import TableAwareChunker
     from src.chunkers.adaptive import AdaptiveChunker
+    from src.chunkers.fixed_size import FixedSizeChunker
 
     chunkers = {
         "recursive": RecursiveChunker,
@@ -135,6 +135,7 @@ def get_chunker(strategy_name: str, cfg: DictConfig, project_root: Path) -> Base
         "contextual": ContextualChunker,
         "table_aware": TableAwareChunker,
         "adaptive": AdaptiveChunker,
+        "fixed_size": FixedSizeChunker,
     }
 
     if strategy_name not in chunkers:

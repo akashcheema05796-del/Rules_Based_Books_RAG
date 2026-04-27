@@ -8,6 +8,7 @@ import logging
 from typing import Optional
 
 import numpy as np
+import tiktoken
 from openai import OpenAI
 
 from src.utils.backoff import with_backoff
@@ -15,6 +16,23 @@ from src.utils.cache import get_cache
 from src.utils.cost_tracker import CostTracker
 
 logger = logging.getLogger(__name__)
+
+_MAX_EMBED_TOKENS = 8000  # OpenAI text-embedding-3-small limit is 8191
+_tokenizer = None
+
+def _get_tokenizer():
+    global _tokenizer
+    if _tokenizer is None:
+        _tokenizer = tiktoken.get_encoding("cl100k_base")
+    return _tokenizer
+
+def _truncate_to_limit(text: str, max_tokens: int = _MAX_EMBED_TOKENS) -> str:
+    """Truncate text to max_tokens tokens to stay within OpenAI's embedding limit."""
+    enc = _get_tokenizer()
+    tokens = enc.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    return enc.decode(tokens[:max_tokens])
 
 
 class EmbeddingClient:
@@ -43,11 +61,12 @@ class EmbeddingClient:
         return [item.embedding for item in response.data]
 
     def embed_single(self, text):
-        key = self._cache_key(text)
+        safe_text = _truncate_to_limit(text)
+        key = self._cache_key(safe_text)
         cached = self.cache.get(key)
         if cached is not None:
             return cached
-        result = self._call_api([text])[0]
+        result = self._call_api([safe_text])[0]
         self.cache.set(key, result)
         return result
 
@@ -55,22 +74,25 @@ class EmbeddingClient:
         results = [None] * len(texts)
         uncached_indices, uncached_texts = [], []
         for i, text in enumerate(texts):
-            key = self._cache_key(text)
+            # Truncate to token limit before hashing/caching
+            safe_text = _truncate_to_limit(text)
+            key = self._cache_key(safe_text)
             cached = self.cache.get(key)
             if cached is not None:
                 results[i] = cached
             else:
                 uncached_indices.append(i)
-                uncached_texts.append(text)
+                uncached_texts.append(safe_text)
         if not uncached_texts:
             return results
         all_embeddings = []
         for start in range(0, len(uncached_texts), self.batch_size):
             batch = uncached_texts[start:start + self.batch_size]
             all_embeddings.extend(self._call_api(batch))
-        for idx, emb in zip(uncached_indices, all_embeddings):
+        for i, (idx, safe_text) in enumerate(zip(uncached_indices, uncached_texts)):
+            emb = all_embeddings[i]
             results[idx] = emb
-            self.cache.set(self._cache_key(texts[idx]), emb)
+            self.cache.set(self._cache_key(safe_text), emb)
         return results
 
     def embed_as_numpy(self, texts):

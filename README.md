@@ -1,164 +1,99 @@
-# RAG Chunking × Retrieval  
+# RAG Chunking × Retrieval Benchmark
 
-A comprehensive, phased benchmark that evaluates **3 chunking strategies** against **7 retrieval methods** for Retrieval-Augmented Generation (RAG), using the **A D&D 2nd Edition** rulebook corpus (15 MB of dense, structure-heavy markdown) as the evaluation dataset.
+A systematic, phased benchmark evaluating **4 chunking strategies** × **7 retrieval methods** on the AD&D 2nd Edition corpus — a 15.7M-character, structure-heavy knowledge base of 26 rulebooks.
 
----
+## Key Results
 
-## 🏆 Key Results
+| Chunking Strategy | Best Method | Recall@10 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|
+| **Markdown Hierarchical** | BM25 | **88.2%** | **77.6%** | **77.5%** |
+| Recursive | BM25 | 88.2% | 74.8% | 75.6% |
+| Fixed-Size | BM25 | 88.2% | 74.4% | 74.5% |
+| Table-Aware | BM25 | 87.3% | 74.7% | 75.1% |
 
-| Metric | Best Config | Score |
-|--------|-------------|-------|
-| **Recall@10** | `markdown_hierarchical` + `bm25` | **0.97** |
-| **nDCG@10** | `markdown_hierarchical` + `bm25` | **0.97** |
-| **MRR** | `markdown_hierarchical` + `bm25` | **0.96** |
-| **Routing lift** | Per-type routing vs single-best | **+11.8 pp** |
+> **TL;DR — BM25 dominates.** Lexical matching outperforms dense/hybrid/LLM-augmented retrieval for structured rule-based text. Chunking strategy has minimal impact on peak recall — all four strategies tie at 88.2% with BM25. The recommended production configuration is **Markdown Hierarchical + BM25**.
 
-### Recall@10 Heatmap (Strategy × Method)
+### Routing Policy (Phase 3)
 
-| Strategy | BM25 | Dense | Hybrid RRF | HyDE | Metadata Filter | Query Decomp | Small-to-Big |
-|----------|------|-------|-----------|------|-----------------|--------------|-------------|
-| **markdown_hierarchical** | **0.97** | 0.89 | **0.97** | 0.88 | 0.89 | 0.81 | 0.65 |
-| **recursive** | **0.97** | 0.89 | 0.96 | 0.86 | 0.89 | 0.84 | 0.70 |
-| **table_aware** | 0.96 | **0.91** | 0.96 | 0.86 | **0.91** | 0.84 | 0.74 |
-
-### Phase 3 — Per-Query-Type Routing
+A query-type classifier can push weighted-average Recall@10 from **88.2% → ~95.4%** by routing to the optimal pipeline per query category:
 
 | Query Type | Best Strategy | Best Method | Recall@10 |
-|-----------|---------------|-------------|-----------|
-| lore (25 q) | markdown_hierarchical | bm25 | **1.000** |
-| mechanical (25 q) | markdown_hierarchical | bm25 | **1.000** |
-| tabular (20 q) | markdown_hierarchical | dense | **1.000** |
-| cross_reference (15 q) | markdown_hierarchical | hybrid_rrf | **1.000** |
-| monster (10 q) | recursive | dense | **1.000** |
-| numeric (5 q) | markdown_hierarchical | bm25 | **1.000** |
+|---|---|---|---|
+| Numeric | Markdown Hierarchical | BM25 | **100.0%** |
+| Mechanical | Markdown Hierarchical | BM25 | 97.6% |
+| Monster | Recursive | Dense | 96.0% |
+| Lore | Markdown Hierarchical | BM25 | 93.6% |
+| Tabular | Markdown Hierarchical | BM25 | 93.0% |
+| Cross-Reference | Recursive | BM25 | 92.0% |
 
-**Routing lift: +11.8 pp** (single-best: 0.882 → per-type routing: 1.000)
-
----
-
-## Pipeline Status
-
-| Stage | Status | Output |
-|-------|--------|--------|
-| `parse` | ✅ Done | 62,874 AST nodes from 15 MB corpus |
-| `chunk` (recursive) | ✅ Done | 10,419 chunks |
-| `chunk` (markdown_hierarchical) | ✅ Done | 10,961 chunks |
-| `chunk` (table_aware) | ✅ Done | 10,989 chunks |
-| `chunk` (contextual) | ⏳ Pending | Requires LLM API spend (~$3–5) |
-| `chunk` (adaptive) | ⏳ Pending | Requires embedding API spend (~$0.05) |
-| `goldset` | ✅ Done | 110 Q&A pairs (100 stratified + 10 distractors) |
-| `index` | ✅ Done | ChromaDB + BM25 indices for 3 strategies |
-| `eval_phase1` | ✅ Done | Chunking isolation (dense-only) |
-| `eval_phase2` | ✅ Done | Full retrieval sweep — 3 strategies × 7 methods |
-| `eval_phase3` | ✅ Done | Query-type routing analysis |
-| `report` | ✅ Done | `results/report.md` + 9 figures |
+Monster is the only query type where Dense beats BM25 — semantic search wins for prose-heavy lore content.
 
 ---
 
-## Architecture Overview
+## Corpus
+
+- **26 AD&D 2nd Edition rulebooks** as a single Markdown file
+- 15.7M characters · 3.94M tokens · 148K lines
+- Content types: combat rules, spell tables, monster stat blocks, lore, cross-references
+
+## Benchmark Scale
 
 ```
-data/raw/*.md
-    └─► parse  ──► AST nodes (62,874)
-                       └─► chunk  ──► 5 strategies ──► chunks.jsonl
-                                           └─► index  ──► ChromaDB + BM25
-                                                             └─► eval  ──► metrics
-                                                                            └─► report
-data/gold/gold_standard.jsonl  (110 Q&A pairs)  ──────────────────► eval
+4 strategies × 7 methods × 110 gold questions × 3 trials × 5 k-values = 52,800 rows
 ```
 
 ---
 
-## Features
+## Chunking Strategies
 
-### Corpus Parsing (`src/corpus/parser.py`)
-- **Auto-selects parser by file size**:
-  - Files **> 1 MB** → fast line-by-line regex scanner (~0.8 s for 15 MB)
-  - Files **≤ 1 MB** → full `markdown-it-py` AST parser
-- Extracts headings (h1–h6), fenced code blocks, pipe tables, and paragraphs with precise `char_start`/`char_end` offsets
+| Strategy | Chunks | Description |
+|---|---|---|
+| `recursive` | ~10,400 | LangChain-style recursive splits on headers → double-newlines → newlines. 512 token max, 77 token overlap. |
+| `markdown_hierarchical` | ~10,900 | AST-based — groups content under heading nodes, preserves chapter path in metadata. |
+| `table_aware` | ~11,200 | Keeps markdown tables atomic (never splits mid-table), adds `is_table` metadata flag. |
+| `fixed_size` | ~8,300 | Pure token-window via tiktoken. 512-token windows, 64-token overlap. No document structure awareness. |
 
-### Chunking Strategies (`src/chunkers/`)
-| Strategy | Description | Chunks |
-|----------|-------------|--------|
-| `recursive` | LangChain recursive character splitting, 512 tokens, 77-token overlap | 10,419 |
-| `markdown_hierarchical` | Split on h2/h3/h4 boundaries; oversized (>2000 tok) sections get recursive fallback | 10,961 |
-| `contextual` | Recursive base + GPT-4o–generated context blurb prepended to each chunk | pending |
-| `table_aware` | Each table = one atomic chunk with ~200-token preceding context; non-table falls to recursive | 10,989 |
-| `adaptive` | Sentence embeddings → merge adjacent sentences while cosine sim > 0.75 and tokens < 512 | pending |
+## Retrieval Methods
 
-### Retrieval Methods (`src/retrieval/`)
-| Method | Description | Best Recall@10 |
-|--------|-------------|---------------|
-| `dense` | ChromaDB cosine similarity (HNSW index, `text-embedding-3-small`) | 0.91 |
-| `bm25` | BM25Okapi sparse keyword search | **0.97** |
-| `hybrid_rrf` | Dense + BM25 fused via Reciprocal Rank Fusion (k=60) | **0.97** |
-| `metadata_filter` | LLM parses query intent (table vs. text) → filtered ChromaDB query | 0.91 |
-| `small_to_big` | Retrieve 200-token micro-chunks; expand to 2000-token parent sections | 0.74 |
-| `hyde` | LLM generates a hypothetical answer → embed answer → retrieve | 0.88 |
-| `query_decomposition` | LLM breaks multi-hop query into sub-queries; merge results via RRF | 0.84 |
-
-### Gold Standard Dataset (`data/gold/`)
-- **110 Q&A pairs** generated by GPT-4o from random corpus sections
-- Stratified across 6 question types + 10 distractors (unanswerable from corpus)
-- Each entry: `query`, `reference_answer`, `reference_contexts` (char offsets), `is_multi_hop`
-
-| Type | Count |
-|------|-------|
-| `lore` | 25 |
-| `mechanical` | 25 |
-| `tabular` | 20 |
-| `cross_reference` | 15 |
-| `monster` | 10 |
-| `numeric` | 5 |
-| `distractor` | 10 |
-
-### Evaluation Engine (`src/evaluation/`)
-- **Retrieval metrics**: Recall@k, MRR, nDCG@k, Hit@k — all computed via ≥50% span-overlap of shorter span
-- **Statistics**: Bootstrap 95% CI, paired bootstrap significance test, Holm-Bonferroni correction
-- **Cost tracking**: Hard budget cap per stage; aborts with projection if exceeded
+| Method | Phase | Description |
+|---|---|---|
+| `dense` | 1 | OpenAI `text-embedding-3-small` (1536d) + FAISS `IndexFlatIP` cosine search |
+| `bm25` | 1 | BM25Okapi sparse retrieval (`rank_bm25`, k1=1.5, b=0.75) |
+| `hybrid_rrf` | 1 | Reciprocal Rank Fusion (k=60) merging Dense + BM25 result lists |
+| `small_to_big` | 1 | Retrieve small chunks, expand to 2000-token parent passages |
+| `metadata_filter` | 2 | GPT-4o-mini parses query → JSON filters (book_title, is_table) + dense search |
+| `hyde` | 2 | Hypothetical Document Embeddings — LLM generates answer, embed & retrieve |
+| `query_decomposition` | 2 | LLM decomposes multi-hop query into sub-queries, RRF merge |
 
 ---
 
-## Visual Results
-
-All figures are in [`results/figures/`](results/figures/):
-
-| Figure | Description |
-|--------|-------------|
-| `recall_at_k_curves.png` | Recall@k curves (k=1,3,5,10,20) — dense retrieval, all 3 strategies |
-| `recall10_heatmap.png` | Recall@10 heatmap — full strategy × method matrix |
-| `ndcg10_heatmap.png` | nDCG@10 heatmap — full strategy × method matrix |
-| `mrr_bars.png` | MRR grouped bar chart — strategy × method |
-| `method_comparison_recall10.png` | Recall@10 per method, one panel per strategy |
-| `query_type_recall.png` | Best Recall@10 per query type |
-| `hit_at_k_hybrid_rrf.png` | Hit@k curves for Hybrid RRF method |
-| `routing_analysis.png` | Phase 3 routing lift + per-type recall |
-| `chunk_counts.png` | Chunk count per chunking strategy |
-
----
-
-## Quick Start
+## Setup
 
 ### 1. Install dependencies
+
 ```bash
 python -m venv venv
 # Windows
 .\venv\Scripts\activate
-# Linux / macOS
+# Linux/Mac
 source venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-### 2. Set API keys
-Copy `.env.example` to `.env`:
+### 2. Configure environment
+
+Copy `.env.example` to `.env` and add your API keys:
+
 ```env
-OPENAI_API_KEY=sk-...        # Required — embeddings + GPT-4o for generation
-ANTHROPIC_API_KEY=sk-ant-... # Optional — only needed if switching back to Claude
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key   # optional — only needed for contextual chunking
 ```
 
-### 3. Add the corpus
-Place the corpus file at:
+### 3. Provide corpus
+
+Place the master markdown file inside `data/raw/`:
+
 ```
 data/raw/DnD_Second_edition__all_26_books.md
 ```
@@ -167,149 +102,87 @@ data/raw/DnD_Second_edition__all_26_books.md
 
 ## Running the Pipeline
 
-All stages use [Hydra](https://hydra.cc/) config management via `main.py`:
+This project uses [Hydra](https://hydra.cc/) for configuration. Run stages sequentially:
 
 ```bash
-# Parse corpus into AST nodes
+# 1. Parse corpus and cache AST (run once — takes ~40 min first time)
 python main.py +stage=parse
 
-# Generate gold-standard Q&A pairs (uses GPT-4o, ~$0.30 for 100 questions)
+# 2. Generate gold-standard evaluation questions
 python main.py +stage=goldset
 
-# Run all chunking strategies
-python main.py +stage=chunk
+# 3. Chunk corpus (specify strategy or use 'all')
+python main.py +stage=chunk +chunking_methods=markdown_hierarchical
+python main.py +stage=chunk +chunking_methods=all
 
-# Build vector + BM25 indices
-python main.py +stage=index
+# 4. Build FAISS + BM25 indices
+python main.py +stage=index +chunking_methods=all
 
-# Evaluate — Phase 1: chunking isolation (dense retrieval only)
-python main.py +stage=eval_phase1
+# 5. Phase 1 — Chunking isolation (dense, BM25, hybrid, small-to-big)
+python main.py +stage=eval_phase1 +chunking_methods=all
 
-# Evaluate — Phase 2: full retrieval sweep (7 methods)
-python main.py +stage=eval_phase2
+# 6. Phase 2 — Full retrieval sweep (includes LLM-augmented methods)
+python main.py +stage=eval_phase2 +chunking_methods=all
 
-# Evaluate — Phase 3: query-type routing analysis
-python main.py +stage=eval_phase3
-
-# Generate final report + plots
+# 7. Phase 3 — Query-type routing analysis + final report
 python main.py +stage=report
 ```
 
-Or run the full pipeline end-to-end:
-```bash
-make all
+> **Note:** Set `KMP_DUPLICATE_LIB_OK=TRUE` on Windows if you see OpenMP conflicts.
+
+---
+
+## Directory Structure
+
+```
+├── configs/                   # Hydra YAML configurations
+│   └── base.yaml
+├── src/
+│   ├── chunkers/              # Chunking strategies
+│   │   ├── recursive.py
+│   │   ├── markdown_hierarchical.py
+│   │   ├── table_aware.py
+│   │   ├── fixed_size.py
+│   │   └── adaptive.py        # Experimental (high chunk count, not benchmarked)
+│   ├── corpus/                # AST parsing, book boundary detection
+│   ├── evaluation/            # Metrics, runner, report generation
+│   ├── goldset/               # Gold-standard question generation
+│   ├── retrieval/             # Indexer, retriever factory, all 7 methods
+│   └── utils/                 # Embeddings (w/ token truncation), tokenizer, seeds
+├── data/
+│   ├── raw/                   # Source corpus (not tracked in git)
+│   ├── interim/               # AST cache (ast_nodes.pkl)
+│   ├── processed/             # Chunk JSONL files per strategy
+│   └── indices/               # FAISS + BM25 index files
+├── results/
+│   ├── benchmark.csv          # 52,800-row full results table
+│   ├── phase1_results.csv
+│   ├── phase2_results.csv
+│   ├── report.md              # Auto-generated report with routing policy
+│   └── figures/               # Recall heatmap, Recall@k curves, query-type breakdown
+├── tests/                     # Pytest suite
+├── main.py                    # Hydra entry point
+└── requirements.txt
 ```
 
-Other make targets:
-```bash
-make parse      # Parse only
-make chunk      # Chunk only
-make goldset    # Generate Q&A pairs
-make test       # Run pytest suite
-make clean      # Remove data/ and results/ outputs
-```
+---
+
+## Findings Summary
+
+1. **BM25 beats Dense** — Lexical matching outperforms semantic search for rule names, spell names, and table lookups. BM25 achieves the same Recall@10 as Hybrid RRF at a fraction of the compute cost.
+
+2. **Chunking strategy barely matters** — All four strategies (including naive fixed-size token windows) achieve 87–88% Recall@10 with BM25. Investing in complex structure-aware chunking yields minimal recall gain.
+
+3. **LLM methods don't pay off** — HyDE (80.0–81.8%), Metadata Filter (79.1–82.0%), and Query Decomposition (70.9–76.4%) all trail BM25. The LLM overhead is not justified for this corpus type.
+
+4. **Small-to-Big is the weakest method** — Context expansion to 2000-token windows dilutes relevance signals. Fixed-Size is hit especially hard (36.4% vs 60–69% for structure-aware strategies) because it has no natural parent-boundary to expand to.
+
+5. **Routing unlocks ~95.4% recall** — A 6-way query-type classifier routes to the optimal pipeline per category. Monster queries uniquely benefit from Dense retrieval; everything else uses BM25.
 
 ---
 
 ## Testing
 
-**165 tests, 0 failures.**
-
 ```bash
 pytest tests/ -v
 ```
-
-| Test File | Coverage |
-|-----------|----------|
-| `test_parser_fast.py` | Fast regex parser, routing by file size, parity with markdown-it-py |
-| `test_chunkers.py` | All 3 deterministic chunkers, `chunk_corpus()` API, heading index |
-| `test_metrics.py` | Span overlap, Recall@k, nDCG@k, MRR, bootstrap CI, Holm-Bonferroni |
-| `test_retrieval.py` | BM25, hybrid RRF, `is_relevant` with char offsets |
-| `test_goldset.py` | `_locate_anchor`, `_sample_corpus_section`, `_filter_candidates` |
-| `test_cost_tracker.py` | CostTracker, BudgetExceededError, per-model pricing |
-| `test_cache.py` | BenchmarkCache read/write, hit rate, namespace isolation |
-| `test_corpus.py` | AST node schema, BookSpan, ChunkMetadata |
-| `smoke_test.py` | End-to-end parse → chunk smoke test with mocked APIs |
-
----
-
-## Project Structure
-
-```
-.
-├── configs/
-│   ├── base.yaml                # Hydra base config (model, paths, budgets)
-│   └── prompts/
-│       └── contextual.md        # Prompt template for contextual chunking
-├── data/
-│   ├── raw/                     # Source corpus (.md) — not committed
-│   ├── interim/                 # parse_summary.json, AST cache
-│   ├── processed/               # chunks.jsonl per strategy
-│   ├── gold/                    # gold_standard.jsonl + gold_meta.json
-│   ├── vector_store/            # ChromaDB persistent indices
-│   ├── bm25_index/              # Pickled BM25 indices
-│   └── .cache/                  # diskcache — embeddings, LLM responses
-├── results/
-│   ├── benchmark.csv            # 19,800 evaluation rows
-│   ├── phase1_results.csv       # Phase 1 detailed results
-│   ├── phase2_results.csv       # Phase 2 detailed results
-│   ├── routing_table.json       # Phase 3 routing analysis
-│   ├── report.md                # Auto-generated statistical report
-│   └── figures/                 # 9 PNG visualisation charts
-├── src/
-│   ├── chunkers/                # 5 chunking strategy implementations
-│   ├── corpus/                  # Parser, AST models, book_detector
-│   ├── evaluation/              # Metrics, generation, statistics, report
-│   ├── goldset/                 # Q&A generator + validator
-│   ├── retrieval/               # 7 retrieval method implementations
-│   └── utils/                   # LLMClient, EmbeddingClient, cache, cost tracker
-├── tests/                       # pytest suite (165 tests)
-├── notebooks/                   # Exploratory analysis notebooks
-├── main.py                      # Hydra entry point
-├── requirements.txt             # Pinned direct dependencies
-└── requirements.lock            # Full frozen environment (pip freeze)
-```
-
----
-
-## Configuration
-
-Key settings in `configs/base.yaml`:
-
-```yaml
-llm:
-  provider: "openai"              # "openai" | "anthropic"
-  model: "gpt-4o"
-  temperature: 0
-
-embedding:
-  model: "text-embedding-3-small"
-  dimensions: 1536
-
-evaluation:
-  compute_generation_metrics: false  # set true to enable LLM judge (adds ~$20–30)
-
-cost_budget:
-  goldset: 10.0                   # USD hard cap per stage
-  phase1: 10.0
-  phase2: 50.0
-  contextual_chunking: 15.0
-```
-
----
-
-## Cost Summary
-
-| Stage | Model | Approx. Cost |
-|-------|-------|-------------|
-| `goldset` (100 Q&A) | GPT-4o | ~$0.27 ✅ |
-| `index` (3 strategies) | text-embedding-3-small | ~$0.30 ✅ |
-| `eval_phase1+2` (retrieval only) | embeddings only | ~$0.01 ✅ |
-| `chunk` (contextual, 11K chunks) | GPT-4o | ~$3–5 (pending) |
-| `eval` (with generation judge) | GPT-4o | ~$20–30 (optional) |
-
----
-
-## License
-
-See [NOTICE.md](NOTICE.md). The AD&D 2nd Edition corpus is used for research purposes only and is not included in this repository.
