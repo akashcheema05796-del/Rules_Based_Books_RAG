@@ -1,6 +1,6 @@
-# RAG Chunking × Retrieval Benchmark
+# RAG Chunking × Retrieval  
 
-A comprehensive, phased benchmark that evaluates **3 chunking strategies** against **7 retrieval methods** for Retrieval-Augmented Generation (RAG), using the **AD&D 2nd Edition** rulebook corpus (15 MB of dense, structure-heavy markdown) as the evaluation dataset.
+A comprehensive, phased benchmark that evaluates **3 chunking strategies** against **7 retrieval methods** for Retrieval-Augmented Generation (RAG), using the **A D&D 2nd Edition** rulebook corpus (15 MB of dense, structure-heavy markdown) as the evaluation dataset.
 
 ---
 
